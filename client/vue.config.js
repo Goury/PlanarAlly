@@ -4,10 +4,11 @@
 // const BundleAnalyzerPlugin = require("webpack-bundle-analyzer").BundleAnalyzerPlugin;
 
 module.exports = {
-    assetsDir: "static",
+    assetsDir: process.env.NODE_ENV === "production" ? "static" : "dev-static",
     outputDir: "../server",
     indexPath: "./templates/index.html",
     configureWebpack: {
+        devtool: "source-map",
         resolve: {
             alias: {
                 vue$: "vue/dist/vue.esm.js", // 'vue/dist/vue.common.js' for webpack 1

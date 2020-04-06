@@ -1,4 +1,6 @@
+import { GlobalPoint, Ray } from "@/game/geom";
 import { EdgeCirculator, Point, Sign, Triangle, Vertex } from "./tds";
+import { equalPoint } from "@/game/utils";
 
 type Line = number[];
 
@@ -117,11 +119,11 @@ export function sideOfOrientedCircleP(p0: Point, p1: Point, p2: Point, p: Point,
 }
 
 export function xyEqual(p: Point, q: Point): boolean {
-    return p[0] === q[0] && p[1] === q[1];
+    return equalPoint(p[0], q[0]) && equalPoint(p[1], q[1]);
 }
 
 export function xySmaller(p: Point, q: Point): boolean {
-    return p[0] < q[0] || (p[0] === q[0] && p[1] < q[1]);
+    return p[0] < q[0] - 0.0001 || (equalPoint(p[0], q[0]) && p[1] < q[1] - 0.0001);
 }
 
 export function xyCompare(p: Point, q: Point): Sign {
@@ -466,4 +468,45 @@ function nextUp(x: number): number {
 
 export function ulp(x: number): number {
     return x < 0 ? nextUp(x) - x : x + nextUp(-x);
+}
+
+export function collinearInOrder(p: Point, q: Point, r: Point): boolean {
+    if (xyCompare(p, q) !== Sign.LARGER && xyCompare(q, r) === Sign.LARGER) return false;
+    if (xyCompare(p, q) !== Sign.SMALLER && xyCompare(q, r) === Sign.SMALLER) return false;
+    return collinear(p, q, r);
+}
+
+export function collinear(p: Point, q: Point, r: Point): boolean {
+    const surface = p[0] * (q[1] - r[1]) + q[0] * (r[1] - p[1]) + r[0] * (p[1] - q[1]);
+    return surface > -0.0001 && surface < 0.0001;
+}
+
+export function rotateAroundOrigin(p: Point, angle: number): Point {
+    const s = Math.sin(angle);
+    const c = Math.cos(angle);
+    return [p[0] * c - p[1] * s, p[0] * s + p[1] * c];
+}
+
+export function circleLineIntersection(
+    circleCenter: GlobalPoint,
+    circleRadius: number,
+    A: GlobalPoint,
+    B: GlobalPoint,
+): GlobalPoint[] {
+    const segmentRay = Ray.fromPoints(A, B); // d
+    const circleLineRay = Ray.fromPoints(circleCenter, A); // f
+    const a = segmentRay.direction.dot(segmentRay.direction);
+    const b = 2 * circleLineRay.direction.dot(segmentRay.direction);
+    const c = circleLineRay.direction.dot(circleLineRay.direction) - circleRadius ** 2;
+    let d = b ** 2 - 4 * a * c;
+    if (d < 0) return [];
+
+    const intersectionPoints: GlobalPoint[] = [];
+
+    d = Math.sqrt(d);
+    const t1 = (-b - d) / (2 * a);
+    const t2 = (-b + d) / (2 * a);
+    if (t1 >= 0 && t1 <= 1) intersectionPoints.push(segmentRay.get(t1));
+    if (t2 >= 0 && t2 <= 1) intersectionPoints.push(segmentRay.get(t2));
+    return intersectionPoints;
 }
