@@ -337,10 +337,10 @@ export default class DmSettings extends Vue {
     toggleSessionLock(): void {
         gameStore.setIsLocked({ isLocked: !gameStore.isLocked, sync: true });
     }
-    focuseveryone() {
+    focuseveryone(): void {
         socket.emit("Location.Focus");
     }
-    deleteLocation(name: string) {
+    deleteLocation(name: string): void {
         (<Game>this.$parent).$refs.prompt
             .prompt(
                 `Enter ${name} to confirm location removal.`,
