@@ -1,12 +1,35 @@
+<script lang="ts">
+import { Component, Vue } from "vue-property-decorator";
+import Loading from "vue-loading-overlay";
+import "vue-loading-overlay/dist/vue-loading.css";
+import { coreStore } from "@/core/store";
+
+@Component({
+    components: {
+        Loading,
+    },
+})
+export default class App extends Vue {
+    get loading(): boolean {
+        return coreStore.loading;
+    }
+}
+</script>
+
 <template>
-  <div id="app">
-    <router-view ref="activeComponent"></router-view>
-  </div>
+    <div id="app">
+        <loading :active.sync="loading" :is-full-page="true"></loading>
+        <router-view ref="activeComponent"></router-view>
+    </div>
 </template>
 
 <style>
 @import url("https://maxcdn.bootstrapcdn.com/font-awesome/4.6.1/css/font-awesome.min.css");
 @import url("https://fonts.googleapis.com/css?family=Open+Sans");
+
+body {
+    overscroll-behavior: contain;
+}
 
 html,
 body,

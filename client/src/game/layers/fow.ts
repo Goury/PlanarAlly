@@ -1,67 +1,100 @@
-import { GlobalPoint, Ray } from "@/game/geom";
+import { InvalidationMode, SyncMode } from "@/core/comm/types";
 import { Layer } from "@/game/layers/layer";
 import { layerManager } from "@/game/layers/manager";
-import { Settings } from "@/game/settings";
 import { Circle } from "@/game/shapes/circle";
 import { Shape } from "@/game/shapes/shape";
 import { gameStore } from "@/game/store";
 import { g2l, g2lr, g2lx, g2ly, g2lz, getUnitDistance } from "@/game/units";
 import { getFogColour } from "@/game/utils";
+import { getVisionSources } from "@/game/visibility/utils";
+import { gameSettingsStore } from "../settings";
+import { TriangulationTarget } from "../visibility/te/pa";
 import { computeVisibility } from "../visibility/te/te";
 
 export class FOWLayer extends Layer {
-    isVisionLayer: boolean = true;
+    isVisionLayer = true;
     preFogShapes: Shape[] = [];
     virtualCanvas: HTMLCanvasElement;
     vCtx: CanvasRenderingContext2D;
 
-    constructor(canvas: HTMLCanvasElement, name: string) {
-        super(canvas, name);
+    constructor(canvas: HTMLCanvasElement, name: string, floor: string) {
+        super(canvas, name, floor);
         this.virtualCanvas = document.createElement("canvas");
         this.virtualCanvas.width = window.innerWidth;
         this.virtualCanvas.height = window.innerHeight;
         this.vCtx = this.virtualCanvas.getContext("2d")!;
     }
 
-    addShape(shape: Shape, sync: boolean, temporary?: boolean, invalidate = true): void {
-        super.addShape(shape, sync, temporary, invalidate);
+    set width(width: number) {
+        super.width = width;
+        this.virtualCanvas.width = width;
+    }
+
+    set height(height: number) {
+        super.height = height;
+        this.virtualCanvas.height = height;
+    }
+
+    addShape(shape: Shape, sync: SyncMode, invalidate: InvalidationMode, snappable = true): void {
+        super.addShape(shape, sync, invalidate, snappable);
         if (shape.options.has("preFogShape") && shape.options.get("preFogShape")) {
             this.preFogShapes.push(shape);
         }
     }
 
-    removeShape(shape: Shape, sync: boolean, temporary?: boolean) {
+    removeShape(shape: Shape, sync: SyncMode): boolean {
+        let idx = -1;
         if (shape.options.has("preFogShape") && shape.options.get("preFogShape")) {
-            const idx = this.preFogShapes.findIndex(s => s.uuid === shape.uuid);
-            this.preFogShapes.splice(idx, 1);
+            idx = this.preFogShapes.findIndex(s => s.uuid === shape.uuid);
         }
-        super.removeShape(shape, sync, temporary);
+        const remove = super.removeShape(shape, sync);
+        if (remove && idx >= 0) this.preFogShapes.splice(idx, 1);
+        return remove;
     }
 
     draw(): void {
         if (!this.valid) {
             const ctx = this.ctx;
 
-            if (Settings.skipLightFOW) {
-                ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-                this.valid = true;
-                return;
-            }
-
             const originalOperation = ctx.globalCompositeOperation;
             ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
             ctx.fillStyle = "rgba(0, 0, 0, 1)";
 
-            const dctx = layerManager.getLayer("draw")!.ctx;
-            if (Settings.drawAngleLines || Settings.drawFirstLightHit) {
-                dctx.clearRect(0, 0, dctx.canvas.width, dctx.canvas.height);
+            const activeFloorName = gameStore.floors[gameStore.selectedFloorIndex];
+
+            if (this.floor === activeFloorName && this.canvas.style.display === "none")
+                this.canvas.style.removeProperty("display");
+            else if (this.floor !== activeFloorName && this.canvas.style.display !== "none")
+                this.canvas.style.display = "none";
+
+            if (this.floor === activeFloorName && layerManager.floors.length > 1) {
+                for (const floor of layerManager.floors) {
+                    if (floor.name !== gameStore.floors[0]) {
+                        const mapl = layerManager.getLayer(floor.name, "map");
+                        if (mapl === undefined) continue;
+                        ctx.globalCompositeOperation = "destination-out";
+                        ctx.drawImage(mapl.canvas, 0, 0);
+                    }
+                    if (floor.name !== activeFloorName) {
+                        const fowl = layerManager.getLayer(floor.name, this.name);
+                        if (fowl === undefined) continue;
+                        ctx.globalCompositeOperation = "source-over";
+                        ctx.drawImage(fowl.canvas, 0, 0);
+                    }
+                    if (floor.name === activeFloorName) break;
+                }
             }
+            ctx.globalCompositeOperation = "source-over";
 
             // At all times provide a minimal vision range to prevent losing your tokens in fog.
-            if (gameStore.fullFOW && layerManager.hasLayer("tokens")) {
-                layerManager.getLayer("tokens")!.shapes.forEach(sh => {
-                    if (!sh.ownedBy() || !sh.isToken) return;
+            if (
+                gameSettingsStore.fullFow &&
+                layerManager.hasLayer(this.floor, "tokens") &&
+                this.floor === gameStore.floors[gameStore.selectedFloorIndex]
+            ) {
+                for (const sh of layerManager.getLayer(this.floor, "tokens")!.shapes) {
+                    if (!sh.ownedBy({ visionAccess: true }) || !sh.isToken) continue;
                     const bb = sh.getBoundingBox();
                     const lcenter = g2l(sh.center());
                     const alm = 0.8 * g2lz(bb.w);
@@ -72,17 +105,19 @@ export class FOWLayer extends Layer {
                     gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
                     ctx.fillStyle = gradient;
                     ctx.fill();
-                });
+                }
             }
 
             this.vCtx.clearRect(0, 0, window.innerWidth, window.innerHeight);
 
             // First cut out all the light sources
-            for (const light of gameStore.visionSources) {
+            for (const light of getVisionSources(this.floor)) {
                 const shape = layerManager.UUIDMap.get(light.shape);
                 if (shape === undefined) continue;
                 const aura = shape.auras.find(a => a.uuid === light.aura);
                 if (aura === undefined) continue;
+
+                if (!shape.ownedBy({ visionAccess: true }) && !aura.visible) continue;
 
                 const auraLength = getUnitDistance(aura.value + aura.dim);
                 const center = shape.center();
@@ -91,118 +126,48 @@ export class FOWLayer extends Layer {
                 const auraCircle = new Circle(center, auraLength);
                 if (!auraCircle.visibleInCanvas(ctx.canvas)) continue;
 
-                if (gameStore.visionMode === "bvh") {
-                    let lastArcAngle = -1;
-
-                    const path = new Path2D();
-                    path.moveTo(lcenter.x, lcenter.y);
-                    let firstPoint: GlobalPoint;
-
-                    for (let angle = 0; angle < 2 * Math.PI; angle += (Settings.angleSteps / 180) * Math.PI) {
-                        const anglePoint = new GlobalPoint(
-                            center.x + auraLength * Math.cos(angle),
-                            center.y + auraLength * Math.sin(angle),
-                        );
-                        if (Settings.drawAngleLines) {
-                            dctx!.beginPath();
-                            dctx!.moveTo(g2lx(center.x), g2ly(center.y));
-                            dctx!.lineTo(g2lx(anglePoint.x), g2ly(anglePoint.y));
-                            dctx!.stroke();
-                        }
-
-                        // Check if there is a hit with one of the nearby light blockers.
-                        const lightRay = Ray.fromPoints(center, anglePoint);
-                        const hitResult = gameStore.BV.intersect(lightRay);
-
-                        if (angle === 0) firstPoint = hitResult.hit ? hitResult.intersect : anglePoint;
-
-                        // We can move on to the next angle if nothing was hit.
-                        if (!hitResult.hit) {
-                            // If an earlier hit caused the aura to leave the arc, we need to go back to the arc
-                            if (lastArcAngle === -1) {
-                                // Set the start of a new arc beginning at the current angle
-                                lastArcAngle = angle;
-                                // Draw a line from the last non arc location back to the arc
-                                const dest = g2l(anglePoint);
-                                ctx.lineTo(dest.x, dest.y);
-                            }
-                            continue;
-                        }
-                        // If hit , first finish any ongoing arc, then move to the intersection point
-                        if (lastArcAngle !== -1) {
-                            path.arc(lcenter.x, lcenter.y, g2lr(aura.value + aura.dim), lastArcAngle, angle);
-                            lastArcAngle = -1;
-                        }
-                        path.lineTo(g2lx(hitResult.intersect.x), g2ly(hitResult.intersect.y));
-                    }
-                    // Finish the final arc.
-                    if (lastArcAngle === -1) path.lineTo(g2lx(firstPoint!.x), g2ly(firstPoint!.y));
-                    else path.arc(lcenter.x, lcenter.y, g2lr(aura.value + aura.dim), lastArcAngle, 2 * Math.PI);
-
-                    if (gameStore.fullFOW) {
-                        if (aura.dim > 0) {
-                            // Fill the light aura with a radial dropoff towards the outside.
-                            const gradient = ctx.createRadialGradient(
-                                lcenter.x,
-                                lcenter.y,
-                                g2lr(aura.value),
-                                lcenter.x,
-                                lcenter.y,
-                                g2lr(aura.value + aura.dim),
-                            );
-                            gradient.addColorStop(0, "rgba(0, 0, 0, 1)");
-                            gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
-                            ctx.fillStyle = gradient;
-                        } else {
-                            ctx.fillStyle = "rgba(0, 0, 0, 1)";
-                        }
-                        ctx.fill(path);
-                    }
-
-                    aura.lastPath = path;
+                this.vCtx.globalCompositeOperation = "source-over";
+                this.vCtx.fillStyle = "rgba(0, 0, 0, 1)";
+                const polygon = computeVisibility(center, TriangulationTarget.VISION, shape.floor);
+                this.vCtx.beginPath();
+                this.vCtx.moveTo(g2lx(polygon[0][0]), g2ly(polygon[0][1]));
+                for (const point of polygon) this.vCtx.lineTo(g2lx(point[0]), g2ly(point[1]));
+                this.vCtx.closePath();
+                this.vCtx.fill();
+                if (aura.dim > 0) {
+                    // Fill the light aura with a radial dropoff towards the outside.
+                    const gradient = this.vCtx.createRadialGradient(
+                        lcenter.x,
+                        lcenter.y,
+                        g2lr(aura.value),
+                        lcenter.x,
+                        lcenter.y,
+                        g2lr(aura.value + aura.dim),
+                    );
+                    gradient.addColorStop(0, "rgba(0, 0, 0, 1)");
+                    gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
+                    this.vCtx.fillStyle = gradient;
                 } else {
-                    this.vCtx.globalCompositeOperation = "source-over";
                     this.vCtx.fillStyle = "rgba(0, 0, 0, 1)";
-                    const polygon = computeVisibility(center, "vision");
-                    this.vCtx.beginPath();
-                    this.vCtx.moveTo(g2lx(polygon[0][0]), g2ly(polygon[0][1]));
-                    for (const point of polygon) this.vCtx.lineTo(g2lx(point[0]), g2ly(point[1]));
-                    this.vCtx.closePath();
-                    this.vCtx.fill();
-                    if (aura.dim > 0) {
-                        // Fill the light aura with a radial dropoff towards the outside.
-                        const gradient = this.vCtx.createRadialGradient(
-                            lcenter.x,
-                            lcenter.y,
-                            g2lr(aura.value),
-                            lcenter.x,
-                            lcenter.y,
-                            g2lr(aura.value + aura.dim),
-                        );
-                        gradient.addColorStop(0, "rgba(0, 0, 0, 1)");
-                        gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
-                        this.vCtx.fillStyle = gradient;
-                    } else {
-                        this.vCtx.fillStyle = "rgba(0, 0, 0, 1)";
-                    }
-                    this.vCtx.globalCompositeOperation = "source-in";
-                    this.vCtx.beginPath();
-                    this.vCtx.arc(lcenter.x, lcenter.y, g2lr(aura.value + aura.dim), 0, 2 * Math.PI);
-                    this.vCtx.fill();
-                    ctx.drawImage(this.virtualCanvas, 0, 0);
                 }
+                this.vCtx.globalCompositeOperation = "source-in";
+                this.vCtx.beginPath();
+                this.vCtx.arc(lcenter.x, lcenter.y, g2lr(aura.value + aura.dim), 0, 2 * Math.PI);
+                this.vCtx.fill();
+                ctx.drawImage(this.virtualCanvas, 0, 0);
+                // aura.lastPath = this.updateAuraPath(polygon, auraCircle);
+                // shape.invalidate(true);
             }
 
-            // At the DM Side due to opacity of the two fow layers, it looks strange if we just render them on top of eachother like players.
-            if (gameStore.fowLOS) {
+            if (gameSettingsStore.fowLos && this.floor === activeFloorName) {
                 ctx.globalCompositeOperation = "source-in";
-                ctx.drawImage(layerManager.getLayer("fow-players")!.canvas, 0, 0);
+                ctx.drawImage(layerManager.getLayer(this.floor, "fow-players")!.canvas, 0, 0);
             }
 
             for (const preShape of this.preFogShapes) {
                 if (!preShape.visibleInCanvas(this.canvas)) continue;
                 const ogComposite = preShape.globalCompositeOperation;
-                if (!gameStore.fullFOW) {
+                if (!gameSettingsStore.fullFow) {
                     if (preShape.globalCompositeOperation === "source-over")
                         preShape.globalCompositeOperation = "destination-out";
                     else if (preShape.globalCompositeOperation === "destination-out")
@@ -212,7 +177,7 @@ export class FOWLayer extends Layer {
                 preShape.globalCompositeOperation = ogComposite;
             }
 
-            if (gameStore.fullFOW) {
+            if (gameSettingsStore.fullFow && this.floor === activeFloorName) {
                 ctx.globalCompositeOperation = "source-out";
                 ctx.fillStyle = getFogColour();
                 ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);

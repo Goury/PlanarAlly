@@ -1,23 +1,3 @@
-<template>
-  <Modal :visible="visible" @close="close">
-    <div
-      class="modal-header"
-      slot="header"
-      slot-scope="m"
-      draggable="true"
-      @dragstart="m.dragStart"
-      @dragend="m.dragEnd"
-    >{{ title }}</div>
-    <div class="modal-body">
-      {{ question }}
-      <input type="text" ref="answer" v-model="answer" @keyup.enter="submit">
-    </div>
-    <div class="modal-footer">
-      <button @click="submit">Submit</button>
-    </div>
-  </Modal>
-</template>
-
 <script lang="ts">
 import Vue from "vue";
 import Component from "vue-class-component";
@@ -39,21 +19,19 @@ export default class Prompt extends Vue {
     answer = "";
     title = "";
 
-    resolve = (value: string) => {};
-    reject = () => {};
+    resolve: (value: string) => void = (_value: string) => {};
+    reject: () => void = () => {};
 
-    submit() {
+    submit(): void {
         this.resolve(this.answer);
         this.close();
     }
-    close() {
+    close(): void {
         this.reject();
         this.visible = false;
-        this.question = "";
-        this.answer = "";
-        this.title = "";
     }
     prompt(question: string, title: string): Promise<string> {
+        this.answer = "";
         this.question = question;
         this.title = title;
         this.visible = true;
@@ -67,6 +45,28 @@ export default class Prompt extends Vue {
     }
 }
 </script>
+
+<template>
+    <Modal :visible="visible" @close="close">
+        <div
+            class="modal-header"
+            slot="header"
+            slot-scope="m"
+            draggable="true"
+            @dragstart="m.dragStart"
+            @dragend="m.dragEnd"
+        >
+            {{ title }}
+        </div>
+        <div class="modal-body">
+            {{ question }}
+            <input type="text" ref="answer" v-model="answer" @keyup.enter="submit" />
+        </div>
+        <div class="modal-footer">
+            <button @click="submit" v-t="'common.submit'"></button>
+        </div>
+    </Modal>
+</template>
 
 <style scoped>
 .modal-header {
@@ -85,7 +85,6 @@ export default class Prompt extends Vue {
 }
 
 .modal-footer {
-    padding-top: 0;
     padding: 10px;
     text-align: right;
 }

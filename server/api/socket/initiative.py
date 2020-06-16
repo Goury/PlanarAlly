@@ -1,44 +1,48 @@
 from operator import itemgetter
+from typing import Any, Dict
+
 from peewee import JOIN
 from playhouse.shortcuts import dict_to_model, update_model_from_dict
 
 import auth
-from app import app, logger, sio, state
+from api.socket.constants import GAME_NS
+from app import app, logger, sio
 from models import (
     Initiative,
     InitiativeEffect,
     InitiativeLocationData,
     Layer,
+    Location,
+    PlayerRoom,
+    Room,
     Shape,
     ShapeOwner,
+    User,
 )
 from models.db import db
+from models.role import Role
+from models.shape.access import has_ownership, has_ownership_temp
 from models.utils import reduce_data_to_model
+from state.game import game_state
 
 
-@sio.on("Initiative.Update", namespace="/planarally")
+@sio.on("Initiative.Update", namespace=GAME_NS)
 @auth.login_required(app, sio)
-async def update_initiative(sid, data):
-    sid_data = state.sid_map[sid]
-    user = sid_data["user"]
-    room = sid_data["room"]
-    location = sid_data["location"]
+async def update_initiative(sid: int, data: Dict[str, Any]):
+    pr: PlayerRoom = game_state.get(sid)
 
     shape = Shape.get_or_none(uuid=data["uuid"])
-    owner = ShapeOwner.get_or_none(shape=shape, user=user) is not None
 
-    if room.creator != user and not owner:
+    if not has_ownership(shape, pr):
         logger.warning(
-            f"{user.name} attempted to change initiative of an asset it does not own"
+            f"{pr.player.name} attempted to change initiative of an asset it does not own"
         )
         return
 
-    used_to_be_visible = False
-
-    location_data = InitiativeLocationData.get_or_none(location=location)
+    location_data = InitiativeLocationData.get_or_none(location=pr.active_location)
     if location_data is None:
         location_data = InitiativeLocationData.create(
-            location=location, turn=data["uuid"], round=1
+            location=pr.active_location, turn=data["uuid"], round=1
         )
     initiatives = Initiative.select().where(Initiative.location_data == location_data)
 
@@ -69,18 +73,8 @@ async def update_initiative(sid, data):
             initiative.location_data = location_data
             initiative.index = index
             initiative.save(force_insert=True)
-    # Remove initiative
-    elif "initiative" not in data:
-        with db.atomic():
-            Initiative.update(index=Initiative.index - 1).where(
-                (Initiative.location_data == location_data)
-                & (Initiative.index >= initiative.index)
-            )
-            initiative.delete_instance(True)
     # Update initiative
     else:
-        used_to_be_visible = initiative.visible
-
         with db.atomic():
             if data["initiative"] != initiative.initiative:
                 # Update indices
@@ -114,22 +108,44 @@ async def update_initiative(sid, data):
 
     data["index"] = initiative.index
 
-    await send_client_initiatives(room, location)
+    await send_client_initiatives(pr)
 
 
-@sio.on("Initiative.Set", namespace="/planarally")
+@sio.on("Initiative.Remove", namespace=GAME_NS)
 @auth.login_required(app, sio)
-async def update_initiative_order(sid, data):
-    sid_data = state.sid_map[sid]
-    user = sid_data["user"]
-    room = sid_data["room"]
-    location = sid_data["location"]
+async def remove_initiative(sid: int, data: Dict[str, Any]):
+    pr: PlayerRoom = game_state.get(sid)
 
-    if room.creator != user:
-        logger.warning(f"{user.name} attempted to change the initiative order")
+    shape = Shape.get_or_none(uuid=data)
+
+    if shape is not None and not has_ownership(shape, pr):
+        logger.warning(
+            f"{pr.player.name} attempted to remove initiative of an asset it does not own"
+        )
         return
 
-    location_data = InitiativeLocationData.get(location=location)
+    initiative = Initiative.get_or_none(uuid=data)
+    location_data = InitiativeLocationData.get_or_none(location=pr.active_location)
+
+    if initiative:
+        with db.atomic():
+            Initiative.update(index=Initiative.index - 1).where(
+                (Initiative.location_data == location_data)
+                & (Initiative.index >= initiative.index)
+            )
+            initiative.delete_instance(True)
+
+        await send_client_initiatives(pr)
+
+
+@sio.on("Initiative.Set", namespace=GAME_NS)
+@auth.login_required(app, sio)
+async def update_initiative_order(sid: int, data: Dict[str, Any]):
+    pr: PlayerRoom = game_state.get(sid)
+
+    if pr.role != Role.DM:
+        logger.warning(f"{pr.player.name} attempted to change the initiative order")
+        return
 
     with db.atomic():
         for i, uuid in enumerate(data):
@@ -137,22 +153,19 @@ async def update_initiative_order(sid, data):
             init.index = i
             init.save()
 
-    await send_client_initiatives(room, location)
+    await send_client_initiatives(pr)
 
 
-@sio.on("Initiative.Turn.Update", namespace="/planarally")
+@sio.on("Initiative.Turn.Update", namespace=GAME_NS)
 @auth.login_required(app, sio)
-async def update_initiative_turn(sid, data):
-    sid_data = state.sid_map[sid]
-    user = sid_data["user"]
-    room = sid_data["room"]
-    location = sid_data["location"]
+async def update_initiative_turn(sid: int, data: Dict[str, Any]):
+    pr: PlayerRoom = game_state.get(sid)
 
-    if room.creator != user:
-        logger.warning(f"{user.name} attempted to advance the initiative tracker")
+    if pr.role != Role.DM:
+        logger.warning(f"{pr.player.name} attempted to advance the initiative tracker")
         return
 
-    location_data = InitiativeLocationData.get(location=location)
+    location_data = InitiativeLocationData.get(location=pr.active_location)
     with db.atomic():
         location_data.turn = data
         location_data.save()
@@ -170,25 +183,22 @@ async def update_initiative_turn(sid, data):
     await sio.emit(
         "Initiative.Turn.Update",
         data,
-        room=location.get_path(),
+        room=pr.active_location.get_path(),
         skip_sid=sid,
-        namespace="/planarally",
+        namespace=GAME_NS,
     )
 
 
-@sio.on("Initiative.Round.Update", namespace="/planarally")
+@sio.on("Initiative.Round.Update", namespace=GAME_NS)
 @auth.login_required(app, sio)
-async def update_initiative_round(sid, data):
-    sid_data = state.sid_map[sid]
-    user = sid_data["user"]
-    room = sid_data["room"]
-    location = sid_data["location"]
+async def update_initiative_round(sid: int, data: Dict[str, Any]):
+    pr: PlayerRoom = game_state.get(sid)
 
-    if room.creator != user:
-        logger.warning(f"{user.name} attempted to advance the initiative tracker")
+    if pr.role != Role.DM:
+        logger.warning(f"{pr.player.name} attempted to advance the initiative tracker")
         return
 
-    location_data = InitiativeLocationData.get(location=location)
+    location_data = InitiativeLocationData.get(location=pr.active_location)
     with db.atomic():
         location_data.round = data
         location_data.save()
@@ -196,22 +206,19 @@ async def update_initiative_round(sid, data):
     await sio.emit(
         "Initiative.Round.Update",
         data,
-        room=location.get_path(),
+        room=pr.active_location.get_path(),
         skip_sid=sid,
-        namespace="/planarally",
+        namespace=GAME_NS,
     )
 
 
-@sio.on("Initiative.Effect.New", namespace="/planarally")
+@sio.on("Initiative.Effect.New", namespace=GAME_NS)
 @auth.login_required(app, sio)
-async def new_initiative_effect(sid, data):
-    sid_data = state.sid_map[sid]
-    user = sid_data["user"]
-    room = sid_data["room"]
-    location = sid_data["location"]
+async def new_initiative_effect(sid: int, data: Dict[str, Any]):
+    pr: PlayerRoom = game_state.get(sid)
 
-    if room.creator != user and not ShapeOwner.get_or_none(shape=data["actor"], user=user):
-        logger.warning(f"{user.name} attempted to create a new initiative effect")
+    if not has_ownership(Shape.get_or_none(uuid=data["actor"]), pr):
+        logger.warning(f"{pr.player.name} attempted to create a new initiative effect")
         return
 
     InitiativeEffect.create(
@@ -224,22 +231,19 @@ async def new_initiative_effect(sid, data):
     await sio.emit(
         "Initiative.Effect.New",
         data,
-        room=location.get_path(),
+        room=pr.active_location.get_path(),
         skip_sid=sid,
-        namespace="/planarally",
+        namespace=GAME_NS,
     )
 
 
-@sio.on("Initiative.Effect.Update", namespace="/planarally")
+@sio.on("Initiative.Effect.Update", namespace=GAME_NS)
 @auth.login_required(app, sio)
-async def update_initiative_effect(sid, data):
-    sid_data = state.sid_map[sid]
-    user = sid_data["user"]
-    room = sid_data["room"]
-    location = sid_data["location"]
-    
-    if room.creator != user and not ShapeOwner.get_or_none(shape=data["actor"], user=user):
-        logger.warning(f"{user.name} attempted to update an initiative effect")
+async def update_initiative_effect(sid: int, data: Dict[str, Any]):
+    pr: PlayerRoom = game_state.get(sid)
+
+    if not has_ownership(Shape.get_or_none(uuid=data["actor"]), pr):
+        logger.warning(f"{pr.player.name} attempted to update an initiative effect")
         return
 
     with db.atomic():
@@ -252,13 +256,13 @@ async def update_initiative_effect(sid, data):
     await sio.emit(
         "Initiative.Effect.Update",
         data,
-        room=location.get_path(),
+        room=pr.active_location.get_path(),
         skip_sid=sid,
-        namespace="/planarally",
+        namespace=GAME_NS,
     )
 
 
-def get_client_initiatives(user, location):
+def get_client_initiatives(user: User, location: Location):
     location_data = InitiativeLocationData.get_or_none(location=location)
     if location_data is None:
         return []
@@ -268,32 +272,30 @@ def get_client_initiatives(user, location):
             initiatives.join(
                 ShapeOwner, JOIN.LEFT_OUTER, on=Initiative.uuid == ShapeOwner.shape
             )
-            .where((Initiative.visible == True) | (ShapeOwner.user == user))
+            .join(Shape, JOIN.LEFT_OUTER, on=Initiative.uuid == Shape.uuid)
+            .where(
+                (Initiative.visible == True)
+                | (Shape.default_edit_access == True)
+                | (ShapeOwner.user == user)
+            )
             .distinct()
         )
     return [i.as_dict() for i in initiatives.order_by(Initiative.index)]
 
 
-async def send_client_initiatives(room, location, user=None, skip_sid=None):
-    for room_player in room.players:
-        if user is None or user == room_player.player:
-            for psid in state.get_sids(user=room_player.player, room=room):
+async def send_client_initiatives(
+    pr: PlayerRoom, target_user: User = None, skip_sid=None
+) -> None:
+    for room_player in pr.room.players:
+        if target_user is None or target_user == room_player.player:
+            for psid in game_state.get_sids(
+                player=room_player.player, active_location=pr.active_location
+            ):
                 if psid == skip_sid:
                     continue
                 await sio.emit(
                     "Initiative.Set",
-                    get_client_initiatives(room_player.player, location),
+                    get_client_initiatives(room_player.player, pr.active_location),
                     room=psid,
-                    namespace="/planarally",
+                    namespace=GAME_NS,
                 )
-
-    if user is None or user == room.creator:
-        for csid in state.get_sids(user=room.creator, room=room):
-            if csid == skip_sid:
-                continue
-            await sio.emit(
-                "Initiative.Set",
-                get_client_initiatives(room.creator, location),
-                room=csid,
-                namespace="/planarally",
-            )

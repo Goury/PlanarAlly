@@ -7,12 +7,11 @@ from aiohttp_security import authorized_userid, check_authorized, forget, rememb
 from app import app, logger
 from models import Location, PlayerRoom, Room, User
 from models.db import db
+from models.role import Role
 
 
-# @aiohttp_jinja2.template("app.jinja2")
 async def root(request):
     return web.FileResponse("./templates/index.html")
-    # return {}
 
 
 async def root_dev(request):
@@ -34,25 +33,17 @@ async def show_room(request):
     user = await check_authorized(request)
     creator = User.by_name(request.match_info["username"])
     try:
-        room = (
-            Room.select()
-            .join(User)
-            .where(
-                (Room.creator == creator)
-                & (Room.name == request.match_info["roomname"])
-            )[0]
-        )
+        room = Room.select().where(
+            (Room.creator == creator) & (Room.name == request.match_info["roomname"])
+        )[0]
     except IndexError:
         logger.info(
             f"{user.name} attempted to load non existing room {request.match_info['username']}/{request.match_info['roomname']}"
         )
     else:
-        if room.creator == user:
-            return {"dm": True}
-        if user.name.lower() in (
-            pr.player.name.lower() for pr in room.players.select().join(User)
-        ):
-            return {"dm": False}
+        for pr in room.players:
+            if pr.user == user:
+                return {"dm": pr.role == Role.DM}
     return web.HTTPFound("/rooms")
 
 

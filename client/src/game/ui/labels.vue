@@ -1,76 +1,3 @@
-<template>
-    <Modal :visible="visible" @close="visible = false" :mask="false">
-        <div
-            class="modal-header"
-            slot="header"
-            slot-scope="m"
-            draggable="true"
-            @dragstart="m.dragStart"
-            @dragend="m.dragEnd"
-        >
-            <div>Label manager</div>
-            <div class="header-close" @click="visible = false">
-                <i class="far fa-window-close"></i>
-            </div>
-        </div>
-        <div class="modal-body">
-            <div class="grid">
-                <div class="header">
-                    <abbr title="Category">Cat.</abbr>
-                </div>
-                <div class="header name">Name</div>
-                <div class="header">
-                    <abbr title="Visible">Vis.</abbr>
-                </div>
-                <div class="header">
-                    <abbr title="Delete">Del.</abbr>
-                </div>
-                <div class="separator spanrow" style="margin: 0 0 7px;"></div>
-                <input class='spanrow' type='text' placeholder="search" v-model="search" ref="search">
-            </div>
-            <div class="grid scroll">
-                <template v-for="category in categories">
-                    <template v-for="label in labels[category]">
-                        <div :key="'row-'+label.uuid" class="row" @click="selectLabel(label.uuid)">
-                            <template v-if="label.category">
-                                <div :key="'cat-'+label.uuid">{{ label.category }}</div>
-                                <div
-                                    class="name"
-                                    :key="'name-'+label.uuid"
-                                >{{ label.name }}</div>
-                            </template>
-                            <template v-if="!label.category">
-                                <div :key="'cat-'+label.uuid"></div>
-                                <div class="name" :key="'name-'+label.uuid">{{ label.name }}</div>
-                            </template>
-                            <div
-                                :key="'visible-'+label.uuid"
-                                :style="{textAlign: 'center'}"
-                                :class="{'lower-opacity': !label.visible}"
-                                @click.stop="toggleVisibility(label)"
-                            >
-                                <i class="fas fa-eye"></i>
-                            </div>
-                            <div :key="'delete-'+label.uuid" @click.stop="deleteLabel(label.uuid)">
-                                <i class="fas fa-trash-alt"></i>
-                            </div>
-                        </div>
-                    </template>
-                </template>
-                <template v-if="labels.length === 0">
-                    <div id="no-labels">No labels exist yet</div>
-                </template>
-            </div>
-            <div class="grid">
-                <div class="separator spanrow"></div>
-                <input type="text" v-model.trim="newCategory">
-                <input type="text" v-model.trim="newName">
-                <button id="addLabelButton" @click.stop="addLabel">Add</button>
-            </div>
-        </div>
-    </Modal>
-</template>
-
 <script lang="ts">
 import Vue from "vue";
 import Component from "vue-class-component";
@@ -93,7 +20,7 @@ export default class LabelManager extends Vue {
     newName = "";
     search = "";
 
-    mounted() {
+    mounted(): void {
         EventBus.$on("LabelManager.Open", () => {
             this.visible = true;
             this.newCategory = "";
@@ -102,17 +29,21 @@ export default class LabelManager extends Vue {
         });
     }
 
-    beforeDestroy() {
+    beforeDestroy(): void {
         EventBus.$off("LabelManager.Open");
     }
 
-    get labels() {
-        const cat: {[category: string]: Label[]} = {'': []};
+    get labels(): { [category: string]: Label[] } {
+        const cat: { [category: string]: Label[] } = { "": [] };
         for (const uuid of Object.keys(gameStore.labels)) {
             const label = gameStore.labels[uuid];
-            if (this.search.length && `${label.category.toLowerCase()}${label.name.toLowerCase()}`.search(this.search.toLowerCase()) < 0) continue;
+            if (
+                this.search.length &&
+                `${label.category.toLowerCase()}${label.name.toLowerCase()}`.search(this.search.toLowerCase()) < 0
+            )
+                continue;
             if (label.user !== gameStore.username) continue;
-            if (!label.category) cat[''].push(label);
+            if (!label.category) cat[""].push(label);
             else {
                 if (!(label.category in cat)) cat[label.category] = [];
                 cat[label.category].push(label);
@@ -122,21 +53,21 @@ export default class LabelManager extends Vue {
         return cat;
     }
 
-    get categories() {
+    get categories(): string[] {
         return Object.keys(this.labels).sort();
     }
 
-    selectLabel(label: string) {
+    selectLabel(label: string): void {
         EventBus.$emit("EditDialog.AddLabel", label);
         this.visible = false;
     }
 
-    toggleVisibility(label: Label) {
+    toggleVisibility(label: Label): void {
         label.visible = !label.visible;
         socket.emit("Label.Visibility.Set", { uuid: label.uuid, visible: label.visible });
     }
 
-    addLabel() {
+    addLabel(): void {
         if (this.newName === "") return;
         const label = {
             uuid: uuidv4(),
@@ -151,12 +82,87 @@ export default class LabelManager extends Vue {
         this.newName = "";
     }
 
-    deleteLabel(uuid: string) {
+    deleteLabel(uuid: string): void {
         gameStore.deleteLabel({ uuid, user: gameStore.username });
         socket.emit("Label.Delete", uuid);
     }
 }
 </script>
+
+<template>
+    <Modal :visible="visible" @close="visible = false" :mask="false">
+        <div
+            class="modal-header"
+            slot="header"
+            slot-scope="m"
+            draggable="true"
+            @dragstart="m.dragStart"
+            @dragend="m.dragEnd"
+        >
+            <div v-t="'game.ui.labels.title'"></div>
+            <div class="header-close" @click="visible = false" :title="$t('common.close')">
+                <i aria-hidden="true" class="far fa-window-close"></i>
+            </div>
+        </div>
+        <div class="modal-body">
+            <div class="grid">
+                <div class="header">
+                    <abbr :title="$t('game.ui.labels.category')" v-t="'game.ui.labels.cat_abbr'"></abbr>
+                </div>
+                <div class="header name" v-t="'common.name'"></div>
+                <div class="header">
+                    <abbr :title="$t('game.ui.labels.visible')" v-t="'game.ui.labels.vis_abbr'"></abbr>
+                </div>
+                <div class="header">
+                    <abbr :title="$t('game.ui.labels.delete')" v-t="'game.ui.labels.del_abbr'"></abbr>
+                </div>
+                <div class="separator spanrow" style="margin: 0 0 7px;"></div>
+                <input class="spanrow" type="text" :placeholder="$t('common.search')" v-model="search" ref="search" />
+            </div>
+            <div class="grid scroll">
+                <template v-for="category in categories">
+                    <template v-for="label in labels[category]">
+                        <div :key="'row-' + label.uuid" class="row" @click="selectLabel(label.uuid)">
+                            <template v-if="label.category">
+                                <div :key="'cat-' + label.uuid">{{ label.category }}</div>
+                                <div class="name" :key="'name-' + label.uuid">{{ label.name }}</div>
+                            </template>
+                            <template v-if="!label.category">
+                                <div :key="'cat-' + label.uuid"></div>
+                                <div class="name" :key="'name-' + label.uuid">{{ label.name }}</div>
+                            </template>
+                            <div
+                                :key="'visible-' + label.uuid"
+                                :style="{ textAlign: 'center' }"
+                                :class="{ 'lower-opacity': !label.visible }"
+                                @click.stop="toggleVisibility(label)"
+                                :title="$t('common.toggle_public_private')"
+                            >
+                                <i aria-hidden="true" class="fas fa-eye"></i>
+                            </div>
+                            <div
+                                :key="'delete-' + label.uuid"
+                                @click.stop="deleteLabel(label.uuid)"
+                                :title="$t('game.ui.labels.delete_label')"
+                            >
+                                <i aria-hidden="true" class="fas fa-trash-alt"></i>
+                            </div>
+                        </div>
+                    </template>
+                </template>
+                <template v-if="labels.length === 0">
+                    <div id="no-labels" v-t="'game.ui.labels.no_exist_msg'"></div>
+                </template>
+            </div>
+            <div class="grid">
+                <div class="separator spanrow"></div>
+                <input type="text" v-model.trim="newCategory" />
+                <input type="text" v-model.trim="newName" />
+                <button id="addLabelButton" @click.stop="addLabel" v-t="'common.add'"></button>
+            </div>
+        </div>
+    </Modal>
+</template>
 
 <style scoped>
 abbr {

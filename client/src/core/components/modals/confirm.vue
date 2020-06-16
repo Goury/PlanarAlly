@@ -1,20 +1,3 @@
-<template>
-  <modal :visible="visible" @close="close">
-    <div
-      class="modal-header"
-      slot="header"
-      slot-scope="m"
-      draggable="true"
-      @dragstart="m.dragStart"
-      @dragend="m.dragEnd"
-    >{{ title }}</div>
-    <div class="modal-body">
-      <button @click="confirm" ref="confirm">{{ yes }}</button>
-      <button @click="deny" v-if="!!no">{{ no }}</button>
-    </div>
-  </modal>
-</template>
-
 <script lang="ts">
 import Vue from "vue";
 import Component from "vue-class-component";
@@ -29,37 +12,48 @@ import Modal from "@/core/components/modals/modal.vue";
 export default class ConfirmDialog extends Vue {
     $refs!: {
         confirm: HTMLButtonElement;
+        deny: HTMLButtonElement;
     };
 
     visible = false;
     yes = "Yes";
     no = "No";
+    showNo = true;
     title = "";
+    text = "";
+    focus: "confirm" | "deny" = "deny";
 
-    resolve = (ok: boolean) => {};
-    reject = () => {};
+    resolve: (ok: boolean) => void = (_ok: boolean) => {};
+    reject: () => void = () => {};
 
-    confirm() {
+    confirm(): void {
         this.resolve(true);
         this.close();
     }
-    deny() {
+    deny(): void {
         this.resolve(false);
         this.close();
     }
-    close() {
+    close(): void {
         this.reject();
         this.visible = false;
-        this.title = "";
     }
-    open(title: string, yes = "yes", no = "no"): Promise<boolean> {
-        this.yes = yes;
-        this.no = no;
+    open(
+        title: string,
+        text = "",
+        buttons?: { yes?: string; no?: string; focus?: "confirm" | "deny"; showNo?: boolean },
+    ): Promise<boolean> {
+        this.yes = buttons?.yes ?? "yes";
+        this.no = buttons?.no ?? "no";
+        this.showNo = buttons?.showNo ?? true;
+        this.focus = buttons?.focus ?? (this.showNo ? "deny" : "confirm");
         this.title = title;
+        this.text = text;
 
         this.visible = true;
         this.$nextTick(() => {
-            this.$refs.confirm.focus();
+            if (this.focus === "confirm") this.$refs.confirm.focus();
+            else this.$refs.deny.focus();
         });
 
         return new Promise((resolve, reject) => {
@@ -69,6 +63,28 @@ export default class ConfirmDialog extends Vue {
     }
 }
 </script>
+
+<template>
+    <modal :visible="visible" @close="close">
+        <div
+            class="modal-header"
+            slot="header"
+            slot-scope="m"
+            draggable="true"
+            @dragstart="m.dragStart"
+            @dragend="m.dragEnd"
+        >
+            {{ title }}
+        </div>
+        <div class="modal-body">
+            <slot>{{ text }}</slot>
+            <div class="buttons">
+                <button @click="confirm" ref="confirm" :class="{ focus: focus === 'confirm' }">{{ yes }}</button>
+                <button @click="deny" v-if="showNo" ref="deny" :class="{ focus: focus === 'deny' }">{{ no }}</button>
+            </div>
+        </div>
+    </modal>
+</template>
 
 <style scoped>
 .modal-header {
@@ -80,12 +96,23 @@ export default class ConfirmDialog extends Vue {
 }
 
 .modal-body {
+    max-width: 30vw;
     padding: 10px;
     display: flex;
-    justify-content: flex-end;
+    flex-direction: column;
+    align-items: center;
+}
+
+.buttons {
+    align-self: flex-end;
 }
 
 button:first-of-type {
     margin-right: 10px;
+}
+
+.focus {
+    color: #7c253e;
+    font-weight: bold;
 }
 </style>

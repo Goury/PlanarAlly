@@ -1,23 +1,3 @@
-<template>
-  <div
-    class="tool-detail"
-    v-if="selected"
-    :style="{'--detailRight': detailRight, '--detailArrow': detailArrow}"
-  >
-    <div id="accordion-container">
-      <accordion
-        v-for="category in categories"
-        :key="category"
-        :title="category === '' ? 'no category' : category"
-        :showArrow="false"
-        :items="labels[category]"
-        :initialValues="initalValues[category]"
-        @selectionupdate="updateSelection"
-      />
-    </div>
-  </div>
-</template>
-
 <script lang="ts">
 import Component from "vue-class-component";
 
@@ -27,18 +7,20 @@ import Tool from "@/game/ui/tools/tool.vue";
 import { socket } from "@/game/api/socket";
 import { layerManager } from "@/game/layers/manager";
 import { gameStore } from "@/game/store";
+import { ToolName } from "./utils";
+import { ToolBasics } from "./ToolBasics";
 
 @Component({
     components: {
         accordion: Accordion,
     },
 })
-export default class FilterTool extends Tool {
-    name = "Filter";
+export default class FilterTool extends Tool implements ToolBasics {
+    name = ToolName.Filter;
     active = false;
 
-    get labels() {
-        const cat: { [category: string]: [string, string][] } = {'': []};
+    get labels(): { [category: string]: [string, string][] } {
+        const cat: { [category: string]: [string, string][] } = { "": [] };
         for (const uuid of Object.keys(gameStore.labels)) {
             const label = gameStore.labels[uuid];
             if (!label.category) cat[""].push([label.uuid, label.name]);
@@ -51,7 +33,7 @@ export default class FilterTool extends Tool {
         return cat;
     }
 
-    get initalValues() {
+    get initalValues(): { [category: string]: string[] } {
         const values: { [category: string]: string[] } = {};
         for (const cat of Object.keys(this.labels)) {
             values[cat] = gameStore.labelFilters.filter(f => this.labels[cat].map(l => l[0]).includes(f));
@@ -59,7 +41,7 @@ export default class FilterTool extends Tool {
         return values;
     }
 
-    get categories() {
+    get categories(): string[] {
         return Object.keys(this.labels).sort();
     }
 
@@ -67,19 +49,19 @@ export default class FilterTool extends Tool {
         return gameStore.labelFilters.includes(uuid);
     }
 
-    toggleFilter(uuid: string) {
+    toggleFilter(uuid: string): void {
         const i = gameStore.labelFilters.indexOf(uuid);
         if (i >= 0) gameStore.labelFilters.splice(i, 1);
         else gameStore.labelFilters.push(uuid);
-        layerManager.invalidate();
+        layerManager.invalidateAllFloors();
     }
 
-    toggleUnlabeled() {
+    toggleUnlabeled(): void {
         gameStore.toggleUnlabeledFilter();
-        layerManager.invalidate();
+        layerManager.invalidateAllFloors();
     }
 
-    updateSelection(data: { title: string; selection: string[] }) {
+    updateSelection(data: { title: string; selection: string[] }): void {
         if (!(data.title in this.labels)) return;
         for (const [uuid, _] of this.labels[data.title]) {
             const idx = gameStore.labelFilters.indexOf(uuid);
@@ -92,10 +74,26 @@ export default class FilterTool extends Tool {
                 socket.emit("Labels.Filter.Add", uuid);
             }
         }
-        layerManager.invalidate();
+        layerManager.invalidateAllFloors();
     }
 }
 </script>
+
+<template>
+    <div class="tool-detail" v-if="selected" :style="{ '--detailRight': detailRight, '--detailArrow': detailArrow }">
+        <div id="accordion-container">
+            <accordion
+                v-for="category in categories"
+                :key="category"
+                :title="category === '' ? $t('game.ui.tools.filter.no_category') : category"
+                :showArrow="false"
+                :items="labels[category]"
+                :initialValues="initalValues[category]"
+                @selectionupdate="updateSelection"
+            />
+        </div>
+    </div>
+</template>
 
 <style>
 .accordion {
@@ -108,7 +106,6 @@ export default class FilterTool extends Tool {
     display: block;
 }
 </style>
-
 
 <style scoped>
 #accordion-container {

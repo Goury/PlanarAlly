@@ -4,10 +4,21 @@ A strong focus is made to ensure that at no time a global and a local point are 
 At first glance this adds weird looking hacks as ts does not support nominal typing.
 */
 
-export function getPointDistance(p1: Point, p2: Point) {
+export function getPointDistance(p1: Point | Vector, p2: Point | Vector): number {
     const a = p1.x - p2.x;
     const b = p1.y - p2.y;
     return Math.sqrt(a * a + b * b);
+}
+
+export function getDistanceToSegment(p: Point, line: [Point, Point]): number {
+    const lineVector = Vector.fromPoints(...line);
+    const pointVector = Vector.fromPoints(line[0], p);
+    const pointVectorScaled = pointVector.multiply(1 / lineVector.length());
+    let t = lineVector.normalize().dot(pointVectorScaled);
+    if (t < 0) t = 0;
+    else if (t > 1) t = 1;
+    const nearest = lineVector.multiply(t);
+    return getPointDistance(nearest, pointVector);
 }
 
 export class Point {
@@ -17,24 +28,27 @@ export class Point {
         this.x = x;
         this.y = y;
     }
-    static fromArray(point: number[]) {
+    static fromArray(point: number[]): Point {
         return new Point(point[0], point[1]);
     }
-    add(vec: Vector) {
-        return new Point(this.x + vec.x, this.y + vec.y);
+    add(vec: Vector): this {
+        return new (<any>this).constructor(this.x + vec.x, this.y + vec.y);
     }
-    subtract(other: Point) {
+    subtract(other: this): Vector {
         return new Vector(this.x - other.x, this.y - other.y);
     }
-    clone(): Point {
-        return new Point(this.x, this.y);
+    clone(): this {
+        return new (<any>this).constructor(this.x, this.y);
     }
-    get(dimension: 0 | 1) {
+    get(dimension: 0 | 1): number {
         if (dimension === 0) return this.x;
         return this.y;
     }
     asArray(): number[] {
         return [this.x, this.y];
+    }
+    equals(other: GlobalPoint, delta = 0.0001): boolean {
+        return Math.abs(this.x - other.x) < delta && Math.abs(this.y - other.y) < delta;
     }
 }
 export class GlobalPoint extends Point {
@@ -42,16 +56,7 @@ export class GlobalPoint extends Point {
     // We do ! to prevent errors that it never gets initialized
     // tslint:disable-next-line:variable-name
     _GlobalPoint!: string;
-    add(vec: Vector): GlobalPoint {
-        return <GlobalPoint>super.add(vec);
-    }
-    subtract(other: GlobalPoint): Vector {
-        return super.subtract(other);
-    }
-    clone(): GlobalPoint {
-        return <GlobalPoint>super.clone();
-    }
-    static fromArray(point: number[]) {
+    static fromArray(point: number[]): GlobalPoint {
         return new GlobalPoint(point[0], point[1]);
     }
 }
@@ -61,15 +66,6 @@ export class LocalPoint extends Point {
     // We do ! to prevent errors that it never gets initialized
     // tslint:disable-next-line:variable-name
     _LocalPoint!: string;
-    add(vec: Vector): LocalPoint {
-        return <LocalPoint>super.add(vec);
-    }
-    subtract(other: LocalPoint): Vector {
-        return super.subtract(other);
-    }
-    clone(): LocalPoint {
-        return <LocalPoint>super.clone();
-    }
 }
 
 export class Vector {
@@ -79,14 +75,20 @@ export class Vector {
         this.x = x;
         this.y = y;
     }
+    static fromPoints(p1: Point, p2: Point): Vector {
+        return new Vector(p2.x - p1.x, p2.y - p1.y);
+    }
     dot(other: Vector): number {
         return this.x * other.x + this.y * other.y;
     }
     inverse(): Vector {
         return new Vector(this.x === 0 ? 0 : 1 / this.x, this.y === 0 ? 0 : 1 / this.y);
     }
+    squaredLength(): number {
+        return Math.pow(this.x, 2) + Math.pow(this.y, 2);
+    }
     length(): number {
-        return Math.sqrt(Math.pow(this.x, 2) + Math.pow(this.y, 2));
+        return Math.sqrt(this.squaredLength());
     }
     normalize(): Vector {
         const l = this.length();
@@ -94,6 +96,9 @@ export class Vector {
     }
     reverse(): Vector {
         return new Vector(-this.x, -this.y);
+    }
+    add(other: Vector): Vector {
+        return new Vector(this.x + other.x, this.y + other.y);
     }
     multiply(scale: number): Vector {
         return new Vector(this.x * scale, this.y * scale);
@@ -123,10 +128,10 @@ export class Ray<T extends Point> {
     get(t: number): T {
         return <T>new Point(this.origin.x + t * this.direction.x, this.origin.y + t * this.direction.y);
     }
-    getDistance(t1: number, t2: number) {
+    getDistance(t1: number, t2: number): number {
         return Math.sqrt(Math.pow(t2 - t1, 2) * (Math.pow(this.direction.x, 2) + Math.pow(this.direction.y, 2)));
     }
-    getT(t1: number, distance: number) {
+    getT(t1: number, distance: number): number {
         return t1 + Math.sqrt(Math.pow(distance, 2) / (Math.pow(this.direction.x, 2) + Math.pow(this.direction.y, 2)));
     }
 }

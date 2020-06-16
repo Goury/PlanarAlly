@@ -1,26 +1,10 @@
 import { ServerShape } from "@/game/comm/types/shapes";
+import { ServerLocationOptions } from "./settings";
 
 export interface ServerLocation {
+    id: number;
     name: string;
-    use_grid: boolean;
-    unit_size: number;
-    full_fow: boolean;
-    fow_opacity: number;
-    fow_los: boolean;
-    vision_mode: "bvh" | "triangle";
-    vision_min_range: number;
-    vision_max_range: number;
-}
-
-export interface ServerClient {
-    name: string;
-    grid_colour: string;
-    fow_colour: string;
-    ruler_colour: string;
-    pan_x: number;
-    pan_y: number;
-    zoom_factor: number;
-    active_layer?: string;
+    options: Partial<ServerLocationOptions>;
 }
 
 export interface InitiativeData {
@@ -40,6 +24,11 @@ export interface InitiativeEffect {
     turns: number;
 }
 
+export interface ServerFloor {
+    name: string;
+    layers: ServerLayer[];
+}
+
 export interface ServerLayer {
     type_: string;
     name: string;
@@ -52,8 +41,9 @@ export interface ServerLayer {
 }
 
 export interface BoardInfo {
-    locations: string[];
-    layers: ServerLayer[];
+    locations: { id: number; name: string }[];
+    floors: ServerFloor[];
+    options: ServerLocationOptions;
 }
 
 export interface Note {

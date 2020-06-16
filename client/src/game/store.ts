@@ -1,19 +1,30 @@
-import Vue from "vue";
-
-import { Action, getModule, Module, Mutation, VuexModule } from "vuex-module-decorators";
-
 import { AssetList } from "@/core/comm/types";
 import { socket } from "@/game/api/socket";
 import { sendClientOptions } from "@/game/api/utils";
 import { Note } from "@/game/comm/types/general";
 import { ServerShape } from "@/game/comm/types/shapes";
-import { GlobalPoint } from "@/game/geom";
+import { GlobalPoint, Vector } from "@/game/geom";
 import { layerManager } from "@/game/layers/manager";
 import { g2l, l2g } from "@/game/units";
 import { zoomValue } from "@/game/utils";
-import { BoundingVolume } from "@/game/visibility/bvh/bvh";
-import { triangulate } from "@/game/visibility/te/pa";
 import { rootStore } from "@/store";
+import Vue from "vue";
+import { getModule, Module, Mutation, VuexModule } from "vuex-module-decorators";
+import { Layer } from "./layers/layer";
+import { gameSettingsStore } from "./settings";
+
+export interface LocationUserOptions {
+    panX: number;
+    panY: number;
+    zoomFactor: number;
+}
+
+export interface Player {
+    id: number;
+    name: string;
+    location: number;
+    role: number;
+}
 
 export interface GameState {
     boardInitialized: boolean;
@@ -27,21 +38,24 @@ class GameStore extends VuexModule implements GameState {
     selectedLayerIndex = -1;
     boardInitialized = false;
 
-    locations: string[] = [];
+    locations: { id: number; name: string }[] = [];
+    floors: string[] = [];
+    selectedFloorIndex = -1;
 
     assets: AssetList = {};
 
     notes: Note[] = [];
 
+    markers: string[] = [];
+
     IS_DM = false;
     FAKE_PLAYER = false;
     isLocked = false;
-    gridSize = 50;
     username = "";
     roomName = "";
     roomCreator = "";
     invitationCode = "";
-    players: { id: number; name: string; }[] = [];
+    players: Player[] = [];
 
     gridColour = "rgba(0, 0, 0, 1)";
     fowColour = "rgba(0, 0, 0, 1)";
@@ -52,28 +66,14 @@ class GameStore extends VuexModule implements GameState {
     zoomDisplay = 0.5;
     // zoomFactor = 1;
 
-    unitSize = 5;
-    useGrid = true;
-    fullFOW = false;
-    fowOpacity = 0.3;
-    fowLOS = false;
-    locationName = "";
-
-    visionSources: { shape: string; aura: string }[] = [];
-    visionBlockers: string[] = [];
     annotations: string[] = [];
-    movementblockers: string[] = [];
     ownedtokens: string[] = [];
     _activeTokens: string[] = [];
 
-    BV = Object.freeze(new BoundingVolume([]));
-
-    visionMode: "bvh" | "triangle" = "bvh";
     drawTEContour = false;
-    visionRangeMin = 1640;
-    visionRangeMax = 3281;
 
     clipboard: ServerShape[] = [];
+    clipboardPosition: GlobalPoint = new GlobalPoint(0, 0);
 
     // Maps are not yet supported in Vue untill 3.X, so for now we're using a plain old object
     labels: { [uuid: string]: Label } = {};
@@ -83,158 +83,237 @@ class GameStore extends VuexModule implements GameState {
 
     showUI = true;
 
-    get selectedLayer() {
+    selectionHelperID: string | null = null;
+
+    invertAlt = false;
+
+    get selectedLayer(): string {
         return this.layers[this.selectedLayerIndex];
     }
 
-    get zoomFactor() {
+    get selectedFloor(): string {
+        return this.floors[this.selectedFloorIndex];
+    }
+
+    get zoomFactor(): number {
         return zoomValue(this.zoomDisplay);
     }
 
-    get activeTokens() {
+    get locationUserOptions(): LocationUserOptions {
+        return {
+            panX: gameStore.panX,
+            panY: gameStore.panY,
+            zoomFactor: gameStore.zoomFactor,
+        };
+    }
+
+    get activeTokens(): string[] {
         if (this._activeTokens.length === 0) return this.ownedtokens;
         return this._activeTokens;
     }
 
-    @Mutation
-    setFakePlayer(value: boolean) {
-        this.FAKE_PLAYER = value;
-        this.IS_DM = !value;
-        layerManager.invalidate();
+    get screenTopLeft(): GlobalPoint {
+        return new GlobalPoint(-this.panX, -this.panY);
+    }
+
+    get screenCenter(): GlobalPoint {
+        const halfScreen = new Vector(window.innerWidth / 2, window.innerHeight / 2);
+        return l2g(g2l(this.screenTopLeft).add(halfScreen));
     }
 
     @Mutation
-    setZoomDisplay(zoom: number) {
+    setSelectionHelperId(id: string): void {
+        this.selectionHelperID = id;
+    }
+
+    @Mutation
+    setFakePlayer(value: boolean): void {
+        this.FAKE_PLAYER = value;
+        this.IS_DM = !value;
+        layerManager.invalidateAllFloors();
+    }
+
+    @Mutation
+    setZoomDisplay(zoom: number): void {
         if (zoom === this.zoomDisplay) return;
         if (zoom < 0) zoom = 0;
         if (zoom > 1) zoom = 1;
         this.zoomDisplay = zoom;
-        layerManager.invalidate();
+        layerManager.invalidateAllFloors();
     }
 
     @Mutation
-    setVisionMode(data: { mode: "bvh" | "triangle"; sync: boolean }) {
-        this.visionMode = data.mode;
-        if (data.sync) socket.emit("Location.Options.Set", { vision_mode: data.mode });
-    }
-
-    @Mutation
-    setBoardInitialized(boardInitialized: boolean) {
+    setBoardInitialized(boardInitialized: boolean): void {
         this.boardInitialized = boardInitialized;
     }
 
     @Mutation
-    toggleUnlabeledFilter() {
+    toggleUnlabeledFilter(): void {
         this.filterNoLabel = !this.filterNoLabel;
     }
 
     @Mutation
-    addLabel(label: Label) {
+    addLabel(label: Label): void {
         Vue.set(this.labels, label.uuid, label);
     }
 
     @Mutation
-    setLabelFilters(filters: string[]) {
+    setLabelFilters(filters: string[]): void {
         this.labelFilters = filters;
     }
 
     @Mutation
-    setLabelVisibility(data: { user: string; uuid: string; visible: boolean }) {
+    setLabelVisibility(data: { user: string; uuid: string; visible: boolean }): void {
         if (!(data.uuid in this.labels)) return;
         this.labels[data.uuid].visible = data.visible;
     }
 
     @Mutation
-    deleteLabel(data: { uuid: string; user: string }) {
+    deleteLabel(data: { uuid: string; user: string }): void {
         if (!(data.uuid in this.labels)) return;
         const label = this.labels[data.uuid];
-        const updatedLayers: Set<string> = new Set();
         for (const shape of layerManager.UUIDMap.values()) {
             const i = shape.labels.indexOf(label);
             if (i >= 0) {
                 shape.labels.splice(i, 1);
-                updatedLayers.add(shape.layer);
+                layerManager.getLayer(shape.floor, shape.layer)!.invalidate(false);
             }
         }
-        for (const layer of updatedLayers) layerManager.getLayer(layer)!.invalidate(false);
         Vue.delete(this.labels, data.uuid);
     }
 
     @Mutation
-    setDM(isDM: boolean) {
+    setDM(isDM: boolean): void {
         this.IS_DM = isDM;
     }
 
     @Mutation
-    setUsername(username: string) {
+    setUsername(username: string): void {
         this.username = username;
     }
 
     @Mutation
-    setRoomName(name: string) {
+    setRoomName(name: string): void {
         this.roomName = name;
     }
 
     @Mutation
-    setRoomCreator(name: string) {
+    setRoomCreator(name: string): void {
         this.roomCreator = name;
     }
 
     @Mutation
-    setInvitationCode(code: string) {
+    setInvitationCode(code: string): void {
         this.invitationCode = code;
     }
 
     @Mutation
-    addLayer(name: string) {
+    addLayer(name: string): void {
         this.layers.push(name);
         if (this.selectedLayerIndex === -1) this.selectedLayerIndex = this.layers.indexOf(name);
     }
 
     @Mutation
-    selectLayer(data: { name: string; sync: boolean }) {
-        const index = this.layers.indexOf(data.name);
-        if (index >= 0) this.selectedLayerIndex = index;
-        if (data.sync) socket.emit("Client.ActiveLayer.Set", data.name);
+    selectLayer(data: { layer: Layer; sync: boolean }): void {
+        let index = this.layers.indexOf(data.layer.name);
+        if (index < 0) index = 0;
+        // else if (index >= this.layers.reduce((acc: number, val: Layer) => val.floor === data.layer.floor))
+        this.selectedLayerIndex = index;
+        if (data.sync) socket.emit("Client.ActiveLayer.Set", { floor: data.layer.floor, layer: data.layer.name });
     }
 
     @Mutation
-    newNote(data: { note: Note; sync: boolean }) {
+    selectFloor(data: { targetFloor: number | string; sync: boolean }): void {
+        let targetFloorIndex: number;
+        if (typeof data.targetFloor === "string") {
+            targetFloorIndex = layerManager.floors.findIndex(f => f.name === data.targetFloor);
+        } else {
+            targetFloorIndex = data.targetFloor;
+        }
+        if (targetFloorIndex === this.selectedFloorIndex) return;
+
+        this.selectedFloorIndex = targetFloorIndex;
+        this.layers = layerManager.floor!.layers.reduce(
+            (acc: string[], val: Layer) =>
+                val.selectable && (val.playerEditable || this.IS_DM) ? [...acc, val.name] : acc,
+            [],
+        );
+        if (this.selectedLayerIndex < 0) this.selectedLayerIndex = 0;
+
+        for (const [f, floor] of layerManager.floors.entries()) {
+            for (const layer of floor.layers) {
+                if (f > targetFloorIndex) layer.canvas.style.display = "none";
+                else layer.canvas.style.removeProperty("display");
+            }
+        }
+        layerManager.selectLayer(layerManager.getLayer(layerManager.floor!.name)!.name, data.sync, false);
+        layerManager.invalidateAllFloors();
+    }
+
+    @Mutation
+    newNote(data: { note: Note; sync: boolean }): void {
         this.notes.push(data.note);
         if (data.sync) socket.emit("Note.New", data.note);
     }
 
     @Mutation
-    setAssets(assets: AssetList) {
+    newMarker(data: { marker: string; sync: boolean }): void {
+        const exists = this.markers.some(m => m === data.marker);
+        if (!exists) {
+            this.markers.push(data.marker);
+            if (data.sync) socket.emit("Marker.New", data.marker);
+        }
+    }
+
+    @Mutation
+    removeMarker(data: { marker: string; sync: boolean }): void {
+        this.markers = this.markers.filter(m => m !== data.marker);
+        if (data.sync) socket.emit("Marker.Remove", data.marker);
+    }
+
+    @Mutation
+    jumpToMarker(marker: string): void {
+        const shape = layerManager.UUIDMap.get(marker);
+        if (shape == undefined) return;
+        const nh = window.innerWidth / gameSettingsStore.gridSize / zoomValue(this.zoomDisplay) / 2;
+        const nv = window.innerHeight / gameSettingsStore.gridSize / zoomValue(this.zoomDisplay) / 2;
+        this.panX = -shape.refPoint.x + nh * gameSettingsStore.gridSize;
+        this.panY = -shape.refPoint.y + nv * gameSettingsStore.gridSize;
+        sendClientOptions(this.locationUserOptions);
+        layerManager.invalidateAllFloors();
+    }
+
+    @Mutation
+    setAssets(assets: AssetList): void {
         this.assets = assets;
     }
 
     @Mutation
-    setLocations(locations: string[]) {
-        this.locations = locations;
+    setLocations(data: { locations: { id: number; name: string }[]; sync: boolean }): void {
+        this.locations = data.locations;
+        if (data.sync)
+            socket.emit(
+                "Locations.Order.Set",
+                this.locations.map(l => l.id),
+            );
     }
 
     @Mutation
-    resetLayerInfo() {
+    removeLocation(id: number): void {
+        const idx = this.locations.findIndex(l => l.id === id);
+        if (idx >= 0) this.locations.splice(idx, 1);
+    }
+
+    @Mutation
+    resetLayerInfo(): void {
+        this.floors = [];
+        this.selectedFloorIndex = -1;
         this.layers = [];
         this.selectedLayerIndex = -1;
     }
 
     @Mutation
-    recalculateVision(partial = false) {
-        if (this.boardInitialized) {
-            if (this.visionMode === "triangle") triangulate("vision", partial);
-            else this.BV = Object.freeze(new BoundingVolume(this.visionBlockers));
-        }
-    }
-
-    @Mutation
-    recalculateMovement(partial = false) {
-        if (this.boardInitialized && this.visionMode === "triangle") triangulate("movement", partial);
-    }
-
-    @Mutation
-    updateZoom(data: { newZoomDisplay: number; zoomLocation: GlobalPoint }) {
+    updateZoom(data: { newZoomDisplay: number; zoomLocation: GlobalPoint }): void {
         if (data.newZoomDisplay === this.zoomDisplay) return;
         if (data.newZoomDisplay < 0) data.newZoomDisplay = 0;
         if (data.newZoomDisplay > 1) data.newZoomDisplay = 1;
@@ -245,126 +324,54 @@ class GameStore extends VuexModule implements GameState {
         const diff = newLoc.subtract(data.zoomLocation);
         this.panX += diff.x;
         this.panY += diff.y;
-        layerManager.invalidate();
-        sendClientOptions();
+        layerManager.invalidateAllFloors();
+        sendClientOptions(gameStore.locationUserOptions);
     }
 
     @Mutation
-    setGridColour(data: { colour: string; sync: boolean }) {
+    setGridColour(data: { colour: string; sync: boolean }): void {
         this.gridColour = data.colour;
-        layerManager.getGridLayer()!.drawGrid();
+        for (const floor of layerManager.floors) {
+            layerManager.getGridLayer(floor.name)!.invalidate();
+        }
         if (data.sync) socket.emit("Client.Options.Set", { gridColour: data.colour });
     }
 
     @Mutation
-    setFOWColour(data: { colour: string; sync: boolean }) {
+    setFOWColour(data: { colour: string; sync: boolean }): void {
         this.fowColour = data.colour;
-        layerManager.invalidate();
+        layerManager.invalidateAllFloors();
         if (data.sync) socket.emit("Client.Options.Set", { fowColour: data.colour });
     }
 
     @Mutation
-    setRulerColour(data: { colour: string; sync: boolean }) {
+    setRulerColour(data: { colour: string; sync: boolean }): void {
         this.rulerColour = data.colour;
         if (data.sync) socket.emit("Client.Options.Set", { rulerColour: data.colour });
     }
 
     @Mutation
-    setPanX(x: number) {
+    setPanX(x: number): void {
         this.panX = x;
     }
 
     @Mutation
-    setPanY(y: number) {
+    setPanY(y: number): void {
         this.panY = y;
     }
 
     @Mutation
-    increasePanX(increase: number) {
+    increasePanX(increase: number): void {
         this.panX += increase;
     }
 
     @Mutation
-    increasePanY(increase: number) {
+    increasePanY(increase: number): void {
         this.panY += increase;
     }
 
     @Mutation
-    setUnitSize(data: { unitSize: number; sync: boolean }) {
-        if (this.unitSize !== data.unitSize && data.unitSize > 0 && data.unitSize < Infinity) {
-            this.unitSize = data.unitSize;
-            layerManager.invalidate();
-            if (data.sync) socket.emit("Location.Options.Set", { unit_size: data.unitSize });
-        }
-    }
-
-    @Mutation
-    setUseGrid(data: { useGrid: boolean; sync: boolean }) {
-        if (this.useGrid !== data.useGrid) {
-            this.useGrid = data.useGrid;
-            const gridLayer = layerManager.getGridLayer()!;
-            if (data.useGrid) gridLayer.canvas.style.display = "block";
-            else gridLayer.canvas.style.display = "none";
-            if (data.sync) socket.emit("Location.Options.Set", { use_grid: data.useGrid });
-        }
-    }
-
-    @Mutation
-    setGridSize(data: { gridSize: number; sync: boolean }): void {
-        if (this.gridSize !== data.gridSize && data.gridSize > 0) {
-            this.gridSize = data.gridSize;
-            const gridLayer = layerManager.getGridLayer();
-            if (gridLayer !== undefined) gridLayer.drawGrid();
-            if (data.sync) socket.emit("Gridsize.Set", data.gridSize);
-        }
-    }
-
-    @Mutation
-    setVisionRangeMin(data: { value: number; sync: boolean }): void {
-        this.visionRangeMin = data.value;
-        layerManager.invalidateLight();
-        if (data.sync) socket.emit("Location.Options.Set", { vision_min_range: data.value });
-    }
-
-    @Mutation
-    setVisionRangeMax(data: { value: number; sync: boolean }): void {
-        this.visionRangeMax = Math.max(data.value, this.visionRangeMin);
-        layerManager.invalidateLight();
-        if (data.sync) socket.emit("Location.Options.Set", { vision_max_range: this.visionRangeMax });
-    }
-
-    @Mutation
-    setFullFOW(data: { fullFOW: boolean; sync: boolean }) {
-        if (this.fullFOW !== data.fullFOW) {
-            this.fullFOW = data.fullFOW;
-            layerManager.invalidateLight();
-            if (data.sync) socket.emit("Location.Options.Set", { full_fow: data.fullFOW });
-        }
-    }
-
-    @Mutation
-    setFOWOpacity(data: { fowOpacity: number; sync: boolean }) {
-        this.fowOpacity = data.fowOpacity;
-        layerManager.invalidateLight();
-        if (data.sync) socket.emit("Location.Options.Set", { fow_opacity: data.fowOpacity });
-    }
-
-    @Mutation
-    setLineOfSight(data: { fowLOS: boolean; sync: boolean }) {
-        if (this.fowLOS !== data.fowLOS) {
-            this.fowLOS = data.fowLOS;
-            layerManager.invalidate();
-            if (data.sync) socket.emit("Location.Options.Set", { fow_los: data.fowLOS });
-        }
-    }
-
-    @Mutation
-    setLocationName(name: string) {
-        this.locationName = name;
-    }
-
-    @Mutation
-    updateNote(data: { note: Note; sync: boolean }) {
+    updateNote(data: { note: Note; sync: boolean }): void {
         const actualNote = this.notes.find(n => n.uuid === data.note.uuid);
         if (actualNote === undefined) return;
         actualNote.title = data.note.title;
@@ -373,75 +380,91 @@ class GameStore extends VuexModule implements GameState {
     }
 
     @Mutation
-    removeNote(data: { note: Note; sync: boolean }) {
+    removeNote(data: { note: Note; sync: boolean }): void {
         this.notes = this.notes.filter(n => n.uuid !== data.note.uuid);
         if (data.sync) socket.emit("Note.Remove", data.note.uuid);
     }
 
     @Mutation
-    toggleUI() {
+    toggleUI(): void {
         this.showUI = !this.showUI;
     }
 
     @Mutation
-    setClipboard(clipboard: ServerShape[]) {
+    setClipboard(clipboard: ServerShape[]): void {
         this.clipboard = clipboard;
     }
 
     @Mutation
-    setActiveTokens(tokens: string[]) {
+    setClipboardPosition(position: GlobalPoint): void {
+        this.clipboardPosition = position;
+    }
+
+    @Mutation
+    setActiveTokens(tokens: string[]): void {
         this._activeTokens = tokens;
-        layerManager.invalidateLight();
+        layerManager.invalidateLightAllFloors();
     }
 
     @Mutation
-    addActiveToken(token: string) {
+    addActiveToken(token: string): void {
         this._activeTokens.push(token);
-        layerManager.invalidateLight();
+        layerManager.invalidateLightAllFloors();
     }
 
     @Mutation
-    removeActiveToken(token: string) {
+    removeActiveToken(token: string): void {
         if (this._activeTokens.length === 0) {
             this._activeTokens = [...this.ownedtokens];
         }
         this._activeTokens.splice(this._activeTokens.indexOf(token), 1);
-        layerManager.invalidateLight();
+        layerManager.invalidateLightAllFloors();
     }
 
     @Mutation
-    setPlayers(players: { id: number; name: string; }[]) {
+    setPlayers(players: Player[]): void {
         this.players = players;
     }
 
     @Mutation
-    addPlayer(player: { id: number; name: string }) {
+    addPlayer(player: Player): void {
         this.players.push(player);
     }
 
     @Mutation
-    kickPlayer(playerId: number) {
+    updatePlayer(data: { player: string; location: number }): void {
+        for (const player of this.players) {
+            if (player.name === data.player) {
+                player.location = data.location;
+            }
+        }
+    }
+
+    @Mutation
+    kickPlayer(playerId: number): void {
         this.players = this.players.filter(p => p.id !== playerId);
     }
 
     @Mutation
-    setIsLocked(data: {isLocked: boolean, sync: boolean}) {
+    setIsLocked(data: { isLocked: boolean; sync: boolean }): void {
         this.isLocked = data.isLocked;
         if (data.sync) {
             socket.emit("Room.Info.Set.Locked", this.isLocked);
         }
     }
 
-    @Action
-    clear() {
-        (<any>this.context.state).visionSources = [];
-        (<any>this.context.state).visionBlockers = [];
-        (<any>this.context.state).ownedtokens = [];
-        (<any>this.context.state).annotations = [];
-        (<any>this.context.state).movementblockers = [];
-        (<any>this.context.state).notes = [];
-        this.context.commit("recalculateVision");
-        this.context.commit("recalculateMovement");
+    @Mutation
+    setInvertAlt(data: { invertAlt: boolean; sync: boolean }): void {
+        this.invertAlt = data.invertAlt;
+        if (data.sync) socket.emit("Client.Options.Set", { invertAlt: data.invertAlt });
+    }
+
+    @Mutation
+    clear(): void {
+        this.ownedtokens = [];
+        this.annotations = [];
+        this.notes = [];
+        this.markers = [];
     }
 }
 

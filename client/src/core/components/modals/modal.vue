@@ -1,21 +1,3 @@
-<template>
-  <transition name="modal">
-    <div
-      class="mask"
-      :class="{'modal-mask': mask, 'dialog-mask': !mask}"
-      @click="close"
-      v-show="visible"
-      @dragover.prevent="dragOver"
-    >
-      <div class="modal-container" @click.stop ref="container" :style="{'background-color': colour}">
-        <slot name="header" :dragStart="dragStart" :dragEnd="dragEnd"></slot>
-        <slot></slot>
-      </div>
-    </div>
-  </transition>
-</template>
-
-
 <script lang="ts">
 import Vue from "vue";
 import Component from "vue-class-component";
@@ -39,18 +21,18 @@ export default class Modal extends Vue {
     dragging = false;
 
     // Example of mounted required: opening note
-    mounted() {
+    mounted(): void {
         this.updatePosition();
     }
     // Example of updated required: opening initiative
-    updated() {
+    updated(): void {
         this.updatePosition();
     }
 
-    close(event: MouseEvent) {
+    close(_event: MouseEvent): void {
         this.$emit("close");
     }
-    updatePosition() {
+    updatePosition(): void {
         if (!this.positioned) {
             const container = <any>this.$refs.container;
             if (container.offsetWidth === 0 && container.offsetHeight === 0) return;
@@ -59,7 +41,7 @@ export default class Modal extends Vue {
             this.positioned = true;
         }
     }
-    dragStart(event: DragEvent) {
+    dragStart(event: DragEvent): void {
         if (event === null || event.dataTransfer === null) return;
         event.dataTransfer.setData("Hack", "");
         // Because the drag event is happening on the header, we have to change the drag image
@@ -71,7 +53,7 @@ export default class Modal extends Vue {
         this.screenY = event.screenY;
         this.dragging = true;
     }
-    dragEnd(event: DragEvent) {
+    dragEnd(event: DragEvent): void {
         this.dragging = false;
         let left = event.clientX - this.offsetX;
         let top = event.clientY - this.offsetY;
@@ -87,11 +69,28 @@ export default class Modal extends Vue {
         this.$refs.container.style.top = top + "px";
         this.$refs.container.style.display = "block";
     }
-    dragOver(event: DragEvent) {
+    dragOver(_event: DragEvent): void {
         if (this.dragging) this.$refs.container.style.display = "none";
     }
 }
 </script>
+
+<template>
+    <transition name="modal">
+        <div
+            class="mask"
+            :class="{ 'modal-mask': mask, 'dialog-mask': !mask }"
+            @click="close"
+            v-show="visible"
+            @dragover.prevent="dragOver"
+        >
+            <div class="modal-container" @click.stop ref="container" :style="{ 'background-color': colour }">
+                <slot name="header" :dragStart="dragStart" :dragEnd="dragEnd"></slot>
+                <slot></slot>
+            </div>
+        </div>
+    </transition>
+</template>
 
 <style scoped>
 .hide {
@@ -123,7 +122,8 @@ export default class Modal extends Vue {
     height: auto;
     border-radius: 2px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.33);
-    font-family: Helvetica, Arial, sans-serif;
+    font-family: "HelveticaNeue-Light", "Helvetica Neue Light", "Helvetica Neue", Helvetica, Arial, "Lucida Grande",
+        sans-serif;
 }
 
 .modal-enter {
