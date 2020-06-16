@@ -229,12 +229,12 @@ form {
 }
 
 .submit {
-    width: 45px;
-    height: 45px;
+    width: 96px;
+    height: 32px;
     display: block;
     margin: 0 auto -15px auto;
     background: #fff;
-    border-radius: 100%;
+    border-radius: 5px;
     border: 1px solid #ff7052;
     color: #ff7052;
     font-size: 24px;

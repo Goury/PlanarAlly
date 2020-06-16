@@ -206,7 +206,7 @@ form {
     background: #fff;
     border-radius: 4px;
     margin-top: 50px;
-    height: 45px;
+    height: 52px;
 }
 
 #account-options form {
@@ -232,7 +232,7 @@ form {
 
 .input input {
     width: 100%;
-    padding: 10px 5px 10px 40px;
+    padding: 10px 5px 10px 10px;
     display: block;
     border: 1px solid #ededed;
     border-radius: 4px;
@@ -247,12 +247,12 @@ form {
 }
 
 .submit {
-    width: 45px;
-    height: 45px;
+    width: 96px;
+    height: 32px;
     display: block;
-    margin: 0 auto -15px auto;
+    margin: 10px;
     background: #fff;
-    border-radius: 100%;
+    border-radius: 5px;
     border: 1px solid #ff7052;
     color: #ff7052;
     font-size: 24px;
