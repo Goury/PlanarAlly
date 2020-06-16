@@ -12,7 +12,10 @@ module.exports = {
         "@typescript-eslint/no-empty-function": "off",
         "@typescript-eslint/no-explicit-any": "off",
         "@typescript-eslint/no-non-null-assertion": "off",
-        "@typescript-eslint/no-unused-vars": [1, { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+        "@typescript-eslint/no-unused-vars": [
+            process.env.GITHUB_ACTION === undefined ? 1 : 2,
+            { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+        ],
         "@typescript-eslint/no-use-before-define": 0,
         // "no-console": process.env.NODE_ENV === "production" ? "error" : "off",
         "no-console": "off",
@@ -21,6 +24,7 @@ module.exports = {
         "no-dupe-class-members": "off",
         "no-empty-function": "off",
         "no-unused-vars": "off",
+        "prettier/prettier": [process.env.GITHUB_ACTION === undefined ? 1 : 2],
     },
     parserOptions: {
         parser: "@typescript-eslint/parser",

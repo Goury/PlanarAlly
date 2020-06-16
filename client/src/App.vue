@@ -1,10 +1,3 @@
-<template>
-    <div id="app">
-        <loading :active.sync="loading" :is-full-page="true"></loading>
-        <router-view ref="activeComponent"></router-view>
-    </div>
-</template>
-
 <script lang="ts">
 import { Component, Vue } from "vue-property-decorator";
 import Loading from "vue-loading-overlay";
@@ -23,9 +16,20 @@ export default class App extends Vue {
 }
 </script>
 
+<template>
+    <div id="app">
+        <loading :active.sync="loading" :is-full-page="true"></loading>
+        <router-view ref="activeComponent"></router-view>
+    </div>
+</template>
+
 <style>
 @import url("https://maxcdn.bootstrapcdn.com/font-awesome/4.6.1/css/font-awesome.min.css");
 @import url("https://fonts.googleapis.com/css?family=Open+Sans");
+
+body {
+    overscroll-behavior: contain;
+}
 
 html,
 body,

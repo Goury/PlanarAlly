@@ -1,20 +1,3 @@
-<template>
-    <transition name="modal">
-        <div
-            class="mask"
-            :class="{ 'modal-mask': mask, 'dialog-mask': !mask }"
-            @click="close"
-            v-show="visible"
-            @dragover.prevent="dragOver"
-        >
-            <div class="modal-container" @click.stop ref="container" :style="{ 'background-color': colour }">
-                <slot name="header" :dragStart="dragStart" :dragEnd="dragEnd"></slot>
-                <slot></slot>
-            </div>
-        </div>
-    </transition>
-</template>
-
 <script lang="ts">
 import Vue from "vue";
 import Component from "vue-class-component";
@@ -92,6 +75,23 @@ export default class Modal extends Vue {
 }
 </script>
 
+<template>
+    <transition name="modal">
+        <div
+            class="mask"
+            :class="{ 'modal-mask': mask, 'dialog-mask': !mask }"
+            @click="close"
+            v-show="visible"
+            @dragover.prevent="dragOver"
+        >
+            <div class="modal-container" @click.stop ref="container" :style="{ 'background-color': colour }">
+                <slot name="header" :dragStart="dragStart" :dragEnd="dragEnd"></slot>
+                <slot></slot>
+            </div>
+        </div>
+    </transition>
+</template>
+
 <style scoped>
 .hide {
     display: none;
@@ -122,7 +122,8 @@ export default class Modal extends Vue {
     height: auto;
     border-radius: 2px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.33);
-    font-family: Helvetica, Arial, sans-serif;
+    font-family: "HelveticaNeue-Light", "Helvetica Neue Light", "Helvetica Neue", Helvetica, Arial, "Lucida Grande",
+        sans-serif;
 }
 
 .modal-enter {

@@ -1,42 +1,3 @@
-<template>
-    <div>
-        <div id="floor" @click="selected = !selected" v-if="floors.length > 1 || IS_DM">
-            <ul>
-                <li>
-                    <a href="#">{{ selectedFloorIndex }}</a>
-                </li>
-            </ul>
-        </div>
-        <div id="floor-detail" v-if="selected">
-            <template v-for="[index, floor] of floors.entries()">
-                <div class="floor-row" :key="floor" @click="selectFloor(index)">
-                    <div class="floor-index">
-                        <template v-if="index == selectedFloorIndex">></template>
-                        {{ index }}
-                    </div>
-                    <div class="floor-name">{{ floor }}</div>
-                    <div class="floor-actions" v-show="floors.length > 1">
-                        <div @click.stop="removeFloor(index)"><i class="fas fa-trash-alt"></i></div>
-                    </div>
-                </div>
-            </template>
-            <div class="floor-add" @click="addFloor">Add new floor</div>
-        </div>
-        <div id="layerselect" v-show="layers.length > 1">
-            <ul>
-                <li
-                    v-for="layer in layers"
-                    :key="layer"
-                    :class="{ 'layer-selected': layer === selectedLayer }"
-                    @mousedown="selectLayer(layer)"
-                >
-                    <a href="#">{{ layer }}</a>
-                </li>
-            </ul>
-        </div>
-    </div>
-</template>
-
 <script lang="ts">
 import Vue from "vue";
 import Component from "vue-class-component";
@@ -72,99 +33,151 @@ export default class FloorSelect extends Vue {
         return gameStore.selectedLayer;
     }
 
+    get showFloorSelector(): boolean {
+        return this.floors.length > 1 || this.IS_DM;
+    }
+
     selectLayer(layer: string): void {
         layerManager.selectLayer(layer);
     }
 
     async addFloor(): Promise<void> {
-        const value = await (<Game>this.$parent).$refs.prompt.prompt("New floor name", "Floor Creation");
+        const value = await (<Game>this.$parent.$parent).$refs.prompt.prompt(
+            this.$t("game.ui.floors.new_name").toString(),
+            this.$t("game.ui.floors.creation").toString(),
+        );
         if (value === undefined) return;
         socket.emit("Floor.Create", value);
     }
 
     selectFloor(index: number): void {
-        gameStore.selectFloor(index);
+        gameStore.selectFloor({ targetFloor: index, sync: true });
     }
 
     async removeFloor(index: number): Promise<void> {
         if (this.floors.length <= 1) return;
         const floor = gameStore.floors[index];
-        if (!(await (<Game>this.$parent).$refs.confirm.open(`Are you sure you wish to remove the ${floor} floor?`)))
+        if (
+            !(await (<Game>this.$parent.$parent).$refs.confirm.open(
+                this.$t("common.warning").toString(),
+                this.$t("game.ui.floors.warning_msg_Z", { z: floor }).toString(),
+            ))
+        )
             return;
         socket.emit("Floor.Remove", floor);
         removeFloor(floor);
     }
+
+    getLayerWord(layer: string): string {
+        switch (layer) {
+            case "map":
+                return this.$t("layer.map").toString();
+
+            case "tokens":
+                return this.$t("layer.tokens").toString();
+
+            case "dm":
+                return this.$t("layer.dm").toString();
+
+            case "fow":
+                return this.$t("layer.fow").toString();
+
+            default:
+                return "";
+        }
+    }
 }
 </script>
 
+<template>
+    <div id="floor-layer">
+        <div id="floor-selector" @click="selected = !selected" v-if="showFloorSelector">
+            <a href="#">{{ selectedFloorIndex }}</a>
+        </div>
+        <div id="floor-detail" v-if="selected">
+            <template v-for="[index, floor] of floors.entries()">
+                <div class="floor-row" :key="floor" @click="selectFloor(index)">
+                    <div class="floor-index">
+                        <template v-if="index == selectedFloorIndex">></template>
+                        {{ index }}
+                    </div>
+                    <div class="floor-name">{{ floor }}</div>
+                    <div class="floor-actions" v-show="floors.length > 1 && IS_DM">
+                        <div @click.stop="removeFloor(index)" :title="$t('game.ui.floors.delete_floor')">
+                            <i aria-hidden="true" class="fas fa-trash-alt"></i>
+                        </div>
+                    </div>
+                </div>
+            </template>
+            <div class="floor-add" @click="addFloor" v-if="IS_DM" v-t="'game.ui.floors.add_new_floor'"></div>
+        </div>
+        <div style="display:contents" v-show="layers.length > 1">
+            <div
+                v-for="layer in layers"
+                class="layer"
+                :key="layer"
+                :class="{ 'layer-selected': layer === selectedLayer }"
+                @mousedown="selectLayer(layer)"
+            >
+                <a href="#">{{ getLayerWord(layer) }}</a>
+            </div>
+        </div>
+    </div>
+</template>
+
 <style scoped>
-#floor {
-    position: absolute;
-    bottom: 25px;
-    left: 25px;
-    z-index: 10;
+#floor-layer {
+    grid-area: layer;
+    display: flex;
+    list-style: none;
+    margin-left: 25px;
+    margin-bottom: 25px;
 }
 
-#layerselect {
-    position: absolute;
-    bottom: 25px;
-    left: 75px;
-    z-index: 10;
-}
-
-#layerselect *,
-#floor * {
+#floor-layer * {
     user-select: none !important;
     -webkit-user-drag: none !important;
 }
 
-#layerselect ul,
-#floor ul {
-    display: flex;
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    border: solid 1px #82c8a0;
-    border-radius: 6px;
+#floor-selector {
+    margin-right: 50px;
+    border-radius: 4px;
 }
 
-#layerselect li,
-#floor li {
-    display: flex;
+#floor-selector,
+.layer {
+    pointer-events: auto;
     background-color: #eee;
     border-right: solid 1px #82c8a0;
 }
 
-#floor li {
-    border-radius: 4px;
-}
-
-#layerselect li:first-child {
-    border-radius: 4px 0px 0px 4px; /* Border radius needs to be two less than the actual border, otherwise there will be a gap */
-}
-
-#layerselect li:last-child {
-    border-right: none;
-    border-radius: 0px 4px 4px 0px;
-}
-
-#layerselect li:hover,
-#floor li:hover {
+#floor-selector:hover,
+.layer:hover,
+.layer-selected {
     background-color: #82c8a0;
 }
 
-#layerselect li a,
-#floor li a {
-    display: flex;
+a {
     padding: 10px;
     text-decoration: none;
+    display: inline-block;
 }
 
-#layerselect .layer-selected {
-    background-color: #82c8a0;
+.layer {
+    border: solid 1px #82c8a0;
+    border-left: none;
+}
+
+.layer:first-of-type {
+    border-radius: 4px 0 0 4px;
+}
+
+.layer:last-of-type {
+    border-radius: 0 4px 4px 0;
 }
 
 #floor-detail {
+    pointer-events: auto;
     position: absolute;
     left: 25px;
     bottom: 80px;
@@ -213,6 +226,7 @@ export default class FloorSelect extends Vue {
 }
 
 .floor-index {
+    grid-column-start: 1;
     padding-right: 5px;
     border-right: 1px solid black;
     justify-self: end;

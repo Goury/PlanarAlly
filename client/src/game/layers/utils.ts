@@ -8,16 +8,16 @@ import { Layer } from "@/game/layers/layer";
 import { layerManager } from "@/game/layers/manager";
 import { Asset } from "@/game/shapes/asset";
 import { gameStore } from "@/game/store";
-import { l2gx, l2gy, l2gz } from "@/game/units";
+import { clampGridLine, l2gx, l2gy, l2gz } from "@/game/units";
 import { visibilityStore } from "@/game/visibility/store";
 import { addCDT, removeCDT } from "@/game/visibility/te/pa";
+import { gameSettingsStore } from "../settings";
 
 export function addFloor(floor: ServerFloor): void {
     gameStore.floors.push(floor.name);
     addCDT(floor.name);
     layerManager.floors.push({ name: floor.name, layers: [] });
     for (const layer of floor.layers) createLayer(layer, floor.name);
-    gameStore.selectFloor(gameStore.floors.length - 1);
 }
 
 export function removeFloor(floor: string): void {
@@ -39,7 +39,7 @@ export function removeFloor(floor: string): void {
     // todo: once vue 3 hits, fix this split up
     gameStore.floors.splice(index, 1);
     layerManager.floors.splice(index, 1);
-    if (gameStore.selectedFloorIndex === index) gameStore.selectFloor(index - 1);
+    if (gameStore.selectedFloorIndex === index) gameStore.selectFloor({ targetFloor: index - 1, sync: true });
 }
 
 export function createLayer(layerInfo: ServerLayer, floor: string): void {
@@ -66,8 +66,6 @@ export function createLayer(layerInfo: ServerLayer, floor: string): void {
         return;
     }
     if (layerInfo.name !== "fow-players") layers.appendChild(canvas);
-
-    if (layerInfo.type_ === "grid" && layerInfo.size) gameStore.setGridSize({ gridSize: layerInfo.size, sync: false });
     // Load layer shapes
     layer.setShapes(layerInfo.shapes);
 }
@@ -85,14 +83,11 @@ export function dropAsset(event: DragEvent): void {
     );
     asset.src = new URL(image.src).pathname;
 
-    if (gameStore.useGrid) {
-        const gs = gameStore.gridSize;
-        asset.refPoint = new GlobalPoint(
-            Math.round(asset.refPoint.x / gs) * gs,
-            Math.round(asset.refPoint.y / gs) * gs,
-        );
-        asset.w = Math.max(Math.round(asset.w / gs) * gs, gs);
-        asset.h = Math.max(Math.round(asset.h / gs) * gs, gs);
+    if (gameSettingsStore.useGrid) {
+        const gs = gameSettingsStore.gridSize;
+        asset.refPoint = new GlobalPoint(clampGridLine(asset.refPoint.x), clampGridLine(asset.refPoint.y));
+        asset.w = Math.max(clampGridLine(asset.w), gs);
+        asset.h = Math.max(clampGridLine(asset.h), gs);
     }
 
     layer.addShape(asset, SyncMode.FULL_SYNC, InvalidationMode.WITH_LIGHT);
@@ -105,8 +100,8 @@ export function snapToPoint(layer: Layer, endPoint: GlobalPoint, ignore?: Global
         const gp = GlobalPoint.fromArray(JSON.parse(point));
         if (ignore && gp.equals(ignore)) continue;
         const l = endPoint.subtract(gp).length();
-        if (smallestPoint === undefined && l < snapDistance) smallestPoint = [l, gp];
-        else if (smallestPoint !== undefined && l < smallestPoint[0]) smallestPoint = [l, gp];
+
+        if (l < (smallestPoint?.[0] ?? snapDistance)) smallestPoint = [l, gp];
     }
     if (smallestPoint !== undefined) endPoint = smallestPoint[1];
     return endPoint;

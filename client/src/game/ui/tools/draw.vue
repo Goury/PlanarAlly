@@ -1,45 +1,3 @@
-<template>
-    <div class="tool-detail" v-if="selected" :style="{ '--detailRight': detailRight, '--detailArrow': detailArrow }">
-        <div v-show="IS_DM">Mode</div>
-        <div v-show="IS_DM" class="selectgroup">
-            <div
-                v-for="mode in modes"
-                :key="mode"
-                class="option"
-                :class="{ 'option-selected': modeSelect === mode }"
-                @click="modeSelect = mode"
-            >
-                {{ mode }}
-            </div>
-        </div>
-        <div>Shape</div>
-        <div class="selectgroup">
-            <div
-                v-for="shape in shapes"
-                :key="shape"
-                class="option"
-                :class="{ 'option-selected': shapeSelect === shape }"
-                @click="shapeSelect = shape"
-            >
-                <i class="fas" :class="'fa-' + shape"></i>
-            </div>
-        </div>
-        <div>Colours</div>
-        <div class="selectgroup">
-            <color-picker class="option" :class="{ 'radius-right': !showBorderColour() }" :color.sync="fillColour" />
-            <color-picker class="option" :color.sync="borderColour" v-show="showBorderColour()" />
-        </div>
-        <div v-show="shapeSelect === 'draw-polygon'" style="display:flex">
-            <label for="polygon-close" style="flex:5">Closed polygon?</label>
-            <input type="checkbox" id="polygon-close" style="flex:1;align-self:center;" v-model="closedPolygon" />
-        </div>
-        <div v-show="hasBrushSize()" style="display:flex">
-            <label for="brush-size" style="flex:5">Brush size</label>
-            <input type="input" id="brush-size" v-model="brushSize" style="flex:4;align-self:center;max-width:100px;" />
-        </div>
-    </div>
-</template>
-
 <script lang="ts">
 import Component from "vue-class-component";
 
@@ -53,7 +11,7 @@ import Tools from "./tools.vue";
 
 import { SyncMode, InvalidationMode } from "@/core/comm/types";
 import { socket } from "@/game/api/socket";
-import { GlobalPoint } from "@/game/geom";
+import { GlobalPoint, LocalPoint } from "@/game/geom";
 import { Layer } from "@/game/layers/layer";
 import { snapToPoint } from "@/game/layers/utils";
 import { layerManager } from "@/game/layers/manager";
@@ -63,23 +21,28 @@ import { Polygon } from "@/game/shapes/polygon";
 import { Rect } from "@/game/shapes/rect";
 import { Shape } from "@/game/shapes/shape";
 import { gameStore } from "@/game/store";
-import { getUnitDistance, l2g, g2lx, g2ly } from "@/game/units";
-import { equalPoints, getLocalPointFromEvent } from "@/game/utils";
+import { getUnitDistance, l2g, g2lx, g2ly, l2gz, clampGridLine } from "@/game/units";
+import { equalPoints, useSnapping } from "@/game/utils";
 import { visibilityStore } from "@/game/visibility/store";
 import { TriangulationTarget, insertConstraint, getCDT } from "@/game/visibility/te/pa";
+import { ToolName } from "./utils";
+import { gameSettingsStore } from "../../settings";
+import { EventBus } from "../../event-bus";
+import { ToolBasics } from "./ToolBasics";
 
 @Component({
     components: {
         "color-picker": ColorPicker,
     },
     computed: {
-        ...mapGetters("game", ["selectedLayer"]),
+        ...mapGetters("game", ["selectedFloor", "selectedLayer"]),
     },
 })
-export default class DrawTool extends Tool {
+export default class DrawTool extends Tool implements ToolBasics {
+    selectedFloor!: number;
     selectedLayer!: string;
 
-    name = "Draw";
+    name = ToolName.Draw;
     active = false;
 
     startPoint: GlobalPoint | null = null;
@@ -95,11 +58,14 @@ export default class DrawTool extends Tool {
     modeSelect = "normal";
     modes = ["normal", "reveal", "hide"];
 
-    brushSize = getUnitDistance(gameStore.unitSize);
+    brushSize = 5;
     closedPolygon = false;
     activeTool = false;
 
     mounted(): void {
+        EventBus.$on("Location.Options.Set", () => {
+            if (this.brushSize === 0) this.brushSize = getUnitDistance(gameSettingsStore.unitSize) / 10;
+        });
         window.addEventListener("keyup", this.onKeyUp);
     }
 
@@ -115,17 +81,21 @@ export default class DrawTool extends Tool {
         return gameStore.IS_DM;
     }
     get unitSize(): number {
-        return gameStore.unitSize;
+        return gameSettingsStore.unitSize;
     }
     get useGrid(): boolean {
-        return gameStore.useGrid;
+        return gameSettingsStore.useGrid;
     }
 
     onKeyUp(event: KeyboardEvent): void {
         if (event.defaultPrevented) return;
         if (event.key === "Escape" && this.active) {
+            let mouse: { x: number; y: number } | undefined = undefined;
+            if (this.brushHelper !== null) {
+                mouse = { x: this.brushHelper.refPoint.x, y: this.brushHelper.refPoint.y };
+            }
             this.onDeselect();
-            this.onSelect();
+            this.onSelect(mouse);
         }
         event.preventDefault();
     }
@@ -155,11 +125,27 @@ export default class DrawTool extends Tool {
         this.onModeChange(newValue, oldValue);
     }
 
+    @Watch("selectedFloor")
+    onFloorChange(newValue: string, oldValue: string): void {
+        if ((<Tools>this.$parent).currentTool === this.name) {
+            let mouse: { x: number; y: number } | undefined = undefined;
+            if (this.brushHelper !== null) {
+                mouse = { x: this.brushHelper.refPoint.x, y: this.brushHelper.refPoint.y };
+            }
+            this.onDeselect({ floor: oldValue });
+            this.onSelect(mouse);
+        }
+    }
+
     @Watch("selectedLayer")
     onLayerChange(newValue: string, oldValue: string): void {
         if ((<Tools>this.$parent).currentTool === this.name) {
-            this.onDeselect(oldValue);
-            this.onSelect();
+            let mouse: { x: number; y: number } | undefined = undefined;
+            if (this.brushHelper !== null) {
+                mouse = { x: this.brushHelper.refPoint.x, y: this.brushHelper.refPoint.y };
+            }
+            this.onDeselect({ layer: oldValue });
+            this.onSelect(mouse);
         }
     }
 
@@ -178,6 +164,7 @@ export default class DrawTool extends Tool {
             this.brushHelper.globalCompositeOperation = "source-over";
             this.brushHelper.fillColour = this.fillColour;
         }
+        this.brushHelper.r = this.helperSize;
     }
     onModeChange(newValue: string, oldValue: string): void {
         if (this.brushHelper === null) return;
@@ -196,12 +183,14 @@ export default class DrawTool extends Tool {
             fowLayer.removeShape(this.brushHelper, SyncMode.NO_SYNC);
         }
     }
-    getLayer(targetLayer?: string): Layer | undefined {
-        if (this.modeSelect === "normal") return layerManager.getLayer(layerManager.floor!.name, targetLayer);
+    getLayer(data?: { floor?: string; layer?: string }): Layer | undefined {
+        if (this.modeSelect === "normal")
+            return layerManager.getLayer(data?.floor ?? layerManager.floor!.name, data?.layer);
         return layerManager.getLayer(layerManager.floor!.name, "fow");
     }
 
-    onDown(startPoint: GlobalPoint): void {
+    onDown(lp: LocalPoint, event: MouseEvent | TouchEvent): void {
+        const startPoint = l2g(lp);
         const layer = this.getLayer();
         if (layer === undefined) {
             console.log("No active layer!");
@@ -213,35 +202,29 @@ export default class DrawTool extends Tool {
             this.active = true;
             switch (this.shapeSelect) {
                 case "square": {
-                    this.shape = new Rect(this.startPoint.clone(), 0, 0, this.fillColour, this.borderColour);
+                    this.shape = new Rect(startPoint.clone(), 0, 0, this.fillColour, this.borderColour);
                     break;
                 }
                 case "circle": {
-                    this.shape = new Circle(
-                        this.startPoint.clone(),
-                        this.helperSize,
-                        this.fillColour,
-                        this.borderColour,
-                    );
+                    this.shape = new Circle(startPoint.clone(), this.helperSize, this.fillColour, this.borderColour);
                     break;
                 }
                 case "paint-brush": {
-                    this.shape = new Polygon(
-                        this.startPoint.clone(),
-                        [],
-                        undefined,
-                        this.fillColour,
-                        this.brushSize,
-                        true,
-                    );
+                    this.shape = new Polygon(startPoint.clone(), [], undefined, this.fillColour, this.brushSize, true);
                     this.shape.fillColour = this.fillColour;
                     break;
                 }
                 case "draw-polygon": {
                     const fill = this.closedPolygon ? this.fillColour : undefined;
                     const stroke = this.closedPolygon ? this.borderColour : this.fillColour;
+                    if (useSnapping(event)) {
+                        this.brushHelper.refPoint = new GlobalPoint(
+                            clampGridLine(startPoint.x),
+                            clampGridLine(startPoint.y),
+                        );
+                    }
                     this.shape = new Polygon(
-                        this.startPoint.clone(),
+                        this.brushHelper.refPoint.clone(),
                         [],
                         fill,
                         stroke,
@@ -262,7 +245,7 @@ export default class DrawTool extends Tool {
             if (this.modeSelect === "reveal") this.shape.globalCompositeOperation = "source-over";
             else if (this.modeSelect === "hide") this.shape.globalCompositeOperation = "destination-out";
 
-            this.shape.addOwner(gameStore.username);
+            this.shape.addOwner({ user: gameStore.username, access: { edit: true } }, false);
             if (layer.name === "fow" && this.modeSelect === "normal") {
                 this.shape.visionObstruction = true;
                 this.shape.movementObstruction = true;
@@ -273,7 +256,9 @@ export default class DrawTool extends Tool {
             this.pushBrushBack();
         } else if (this.shape !== null && this.shapeSelect === "draw-polygon" && this.shape instanceof Polygon) {
             // For polygon draw
-            this.shape._vertices.push(this.brushHelper.refPoint);
+            if (useSnapping(event))
+                this.brushHelper.refPoint = new GlobalPoint(clampGridLine(startPoint.x), clampGridLine(startPoint.y));
+            this.shape._vertices.push(this.brushHelper.refPoint.clone());
             this.shape.updatePoints();
         }
         if (this.shape !== null && this.shapeSelect === "draw-polygon" && this.shape instanceof Polygon) {
@@ -300,16 +285,20 @@ export default class DrawTool extends Tool {
                     this.shape.points[this.shape.points.length - 1],
                 );
             layer.invalidate(false);
-            socket.emit("Shape.Update", { shape: this.shape!.asDict(), redraw: true, temporary: true });
+            if (!this.shape!.preventSync)
+                socket.emit("Shape.Update", { shape: this.shape!.asDict(), redraw: true, temporary: true });
         }
     }
 
-    onMove(endPoint: GlobalPoint): void {
+    onMove(lp: LocalPoint, event: MouseEvent | TouchEvent): void {
+        let endPoint = l2g(lp);
         const layer = this.getLayer();
         if (layer === undefined) {
             console.log("No active layer!");
             return;
         }
+
+        if (useSnapping(event)) endPoint = snapToPoint(this.getLayer()!, endPoint, this.ruler?.refPoint);
 
         if (this.brushHelper !== null) {
             this.brushHelper.r = this.helperSize;
@@ -355,7 +344,8 @@ export default class DrawTool extends Tool {
         }
 
         if (!(this.shapeSelect === "draw-polygon" && this.shape instanceof Polygon)) {
-            socket.emit("Shape.Update", { shape: this.shape!.asDict(), redraw: true, temporary: true });
+            if (!this.shape!.preventSync)
+                socket.emit("Shape.Update", { shape: this.shape!.asDict(), redraw: true, temporary: true });
             if (this.shape.visionObstruction) {
                 if (
                     getCDT(TriangulationTarget.VISION, this.shape.floor).tds.getTriagVertices(this.shape.uuid).length >
@@ -372,7 +362,7 @@ export default class DrawTool extends Tool {
         layer.invalidate(false);
     }
 
-    onUp(event: MouseEvent | TouchEvent): void {
+    onUp(lp: LocalPoint, event: MouseEvent | TouchEvent): void {
         if (
             !this.active ||
             this.shape === null ||
@@ -380,14 +370,17 @@ export default class DrawTool extends Tool {
         ) {
             return;
         }
+        let endPoint = l2g(lp);
+        if (useSnapping(event)) endPoint = snapToPoint(this.getLayer()!, endPoint, this.ruler?.refPoint);
+
         // TODO: handle touch event different than altKey, long press
-        if (!event.altKey && this.useGrid) {
+        if (useSnapping(event) && this.useGrid) {
             if (this.shape.visionObstruction)
                 visibilityStore.deleteFromTriag({
                     target: TriangulationTarget.VISION,
                     shape: this.shape,
                 });
-            this.shape.resizeToGrid();
+            this.shape.resizeToGrid(this.shape.getPointIndex(endPoint, l2gz(5)), event.ctrlKey);
             if (this.shape.visionObstruction) {
                 visibilityStore.addToTriag({ target: TriangulationTarget.VISION, shape: this.shape });
                 visibilityStore.recalculateVision(this.shape.floor);
@@ -398,35 +391,6 @@ export default class DrawTool extends Tool {
             }
         }
         this.finaliseShape();
-    }
-
-    onMouseDown(_event: MouseEvent): void {
-        if (this.brushHelper === null) return;
-        const startPoint = this.brushHelper.refPoint;
-        this.onDown(startPoint);
-    }
-
-    onMouseMove(event: MouseEvent): void {
-        const endPoint = snapToPoint(this.getLayer()!, l2g(getLocalPointFromEvent(event)), this.ruler?.refPoint);
-        this.onMove(endPoint);
-    }
-
-    onMouseUp(event: MouseEvent): void {
-        this.onUp(event);
-    }
-
-    onTouchStart(event: TouchEvent): void {
-        const startPoint = snapToPoint(this.getLayer()!, l2g(getLocalPointFromEvent(event)), this.ruler?.refPoint);
-        this.onDown(startPoint);
-    }
-
-    onTouchMove(event: TouchEvent): void {
-        const endPoint = snapToPoint(this.getLayer()!, l2g(getLocalPointFromEvent(event)), this.ruler?.refPoint);
-        this.onMove(endPoint);
-    }
-
-    onTouchEnd(event: TouchEvent): void {
-        this.onUp(event);
     }
 
     onContextMenu(event: MouseEvent): void {
@@ -469,12 +433,17 @@ export default class DrawTool extends Tool {
         if (this.shape === null) return;
         this.shape.updatePoints();
         if (this.shape.points.length <= 1) {
+            let mouse: { x: number; y: number } | undefined = undefined;
+            if (this.brushHelper !== null) {
+                mouse = { x: this.brushHelper.refPoint.x, y: this.brushHelper.refPoint.y };
+            }
             this.onDeselect();
-            this.onSelect();
+            this.onSelect(mouse);
         } else {
             if (this.shape.visionObstruction) visibilityStore.recalculateVision(this.shape.floor);
             if (this.shape.movementObstruction) visibilityStore.recalculateMovement(this.shape.floor);
-            socket.emit("Shape.Update", { shape: this.shape!.asDict(), redraw: true, temporary: false });
+            if (!this.shape!.preventSync)
+                socket.emit("Shape.Update", { shape: this.shape!.asDict(), redraw: true, temporary: false });
         }
         this.active = false;
         const layer = this.getLayer();
@@ -483,19 +452,23 @@ export default class DrawTool extends Tool {
         }
     }
 
-    onSelect(): void {
+    onSelect(mouse?: { x: number; y: number }): void {
         this.activeTool = true;
         const layer = this.getLayer();
         if (layer === undefined) return;
         layer.canvas.parentElement!.style.cursor = "none";
-        this.brushHelper = new Circle(new GlobalPoint(-1000, -1000), this.brushSize / 2, this.fillColour);
+        this.brushHelper = new Circle(
+            new GlobalPoint(mouse?.x ?? -1000, mouse?.y ?? -1000),
+            this.brushSize / 2,
+            this.fillColour,
+        );
         this.setupBrush();
         layer.addShape(this.brushHelper, SyncMode.NO_SYNC, InvalidationMode.NORMAL, false); // during mode change the shape is already added
         if (gameStore.IS_DM) this.showLayerPoints();
     }
-    onDeselect(targetLayer?: string): void {
+    onDeselect(data?: { floor?: string; layer?: string }): void {
         this.activeTool = false;
-        const layer = this.getLayer(targetLayer);
+        const layer = this.getLayer(data);
         if (layer === undefined) return;
         if (this.brushHelper !== null) {
             layer.removeShape(this.brushHelper, SyncMode.NO_SYNC);
@@ -544,11 +517,98 @@ export default class DrawTool extends Tool {
     }
 
     private hideLayerPoints(): void {
-        console.log("Clearing");
         layerManager.getLayer(layerManager.floor!.name, "draw")?.invalidate(true);
+    }
+
+    getShapeWord(shape: string): string {
+        switch (shape) {
+            case "square":
+                return this.$t("draw.square").toString();
+
+            case "circle":
+                return this.$t("draw.circle").toString();
+
+            case "draw-polygon":
+                return this.$t("draw.draw-polygon").toString();
+
+            case "paint-brush":
+                return this.$t("draw.paint-brush").toString();
+
+            default:
+                return "";
+        }
+    }
+
+    getModeWord(mode: string): string {
+        switch (mode) {
+            case "normal":
+                return this.$t("draw.normal").toString();
+
+            case "reveal":
+                return this.$t("draw.reveal").toString();
+
+            case "hide":
+                return this.$t("draw.hide").toString();
+
+            default:
+                return "";
+        }
     }
 }
 </script>
+
+<template>
+    <div class="tool-detail" v-if="selected" :style="{ '--detailRight': detailRight, '--detailArrow': detailArrow }">
+        <div v-show="IS_DM" v-t="'game.ui.tools.draw.mode'"></div>
+        <div v-show="IS_DM" class="selectgroup">
+            <div
+                v-for="mode in modes"
+                :key="mode"
+                class="option"
+                :class="{ 'option-selected': modeSelect === mode }"
+                @click="modeSelect = mode"
+            >
+                {{ getModeWord(mode) }}
+            </div>
+        </div>
+        <div v-t="'common.shape'"></div>
+        <div class="selectgroup">
+            <div
+                v-for="shape in shapes"
+                :key="shape"
+                class="option"
+                :class="{ 'option-selected': shapeSelect === shape }"
+                @click="shapeSelect = shape"
+                :title="getShapeWord(shape)"
+            >
+                <i aria-hidden="true" class="fas" :class="'fa-' + shape"></i>
+            </div>
+        </div>
+        <div v-t="'common.colors'"></div>
+        <div class="selectgroup">
+            <color-picker
+                class="option"
+                :class="{ 'radius-right': !showBorderColour() }"
+                :color.sync="fillColour"
+                :title="$t('game.ui.tools.draw.foreground_color')"
+            />
+            <color-picker
+                class="option"
+                :color.sync="borderColour"
+                v-show="showBorderColour()"
+                :title="$t('game.ui.tools.draw.background_color')"
+            />
+        </div>
+        <div v-show="shapeSelect === 'draw-polygon'" style="display:flex">
+            <label for="polygon-close" style="flex:5" v-t="'game.ui.tools.draw.closed_polygon'"></label>
+            <input type="checkbox" id="polygon-close" style="flex:1;align-self:center;" v-model="closedPolygon" />
+        </div>
+        <div v-show="hasBrushSize()" style="display:flex">
+            <label for="brush-size" style="flex:5" v-t="'game.ui.tools.draw.brush_size'"></label>
+            <input type="input" id="brush-size" v-model="brushSize" style="flex:4;align-self:center;max-width:100px;" />
+        </div>
+    </div>
+</template>
 
 <style scoped>
 .option {

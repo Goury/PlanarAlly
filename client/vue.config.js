@@ -7,6 +7,7 @@ module.exports = {
     assetsDir: process.env.NODE_ENV === "production" ? "static" : "dev-static",
     outputDir: "../server",
     indexPath: "./templates/index.html",
+
     configureWebpack: {
         devtool: "source-map",
         resolve: {
@@ -15,6 +16,7 @@ module.exports = {
             },
         },
     },
+
     // plugins: [
     //     new CircularDependencyPlugin({
     //         exclude: /a\.js|node_modules/,
@@ -24,4 +26,14 @@ module.exports = {
     //     }),
     // new BundleAnalyzerPlugin(),
     // ],
+    parallel: require("os").cpus().length > 1 && !process.env.CIRCLECI,
+
+    pluginOptions: {
+      i18n: {
+        locale: 'en',
+        fallbackLocale: 'en',
+        localeDir: 'locales',
+        enableInSFC: true
+      }
+    }
 };

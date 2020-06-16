@@ -89,7 +89,7 @@ export function copyShapes(): void {
     if (!layer.selection) return;
     const clipboard: ServerShape[] = [];
     for (const shape of layer.selection) {
-        if (!shape.ownedBy()) continue;
+        if (!shape.ownedBy({ editAccess: true })) continue;
         if (gameStore.selectionHelperID === shape.uuid) continue;
         clipboard.push(shape.asDict());
     }
@@ -145,11 +145,12 @@ export function pasteShapes(targetLayer?: string): Shape[] {
         else {
             if (!groupLeader.options.has("groupInfo")) groupLeader.options.set("groupInfo", []);
             const groupMembers = groupLeader.getGroupMembers();
-            clip.badge = groupMembers.reduce((acc: number, shape: Shape) => Math.max(acc, shape.badge ?? 1), 0) + 1;
+            clip.badge = groupMembers.reduce((acc: number, sh: Shape) => Math.max(acc, sh.badge ?? 1), 0) + 1;
             groupLeader.options.set("groupInfo", [...groupLeader.options.get("groupInfo"), clip.uuid]);
             options.set("groupId", groupLeader.uuid);
             clip.options = JSON.stringify([...options]);
-            socket.emit("Shape.Update", { shape: groupLeader.asDict(), redraw: false, temporary: false });
+            if (!groupLeader.preventSync)
+                socket.emit("Shape.Update", { shape: groupLeader.asDict(), redraw: false, temporary: false });
         }
         // Finalize
         const shape = createShapeFromDict(clip);
@@ -163,6 +164,7 @@ export function pasteShapes(targetLayer?: string): Shape[] {
     return layer.selection;
 }
 
+// todo: refactor with removeShape in api/events/shape
 export function deleteShapes(): void {
     if (layerManager.getLayer(layerManager.floor!.name) === undefined) {
         console.log("No active layer selected for delete operation");
@@ -171,14 +173,12 @@ export function deleteShapes(): void {
     const l = layerManager.getLayer(layerManager.floor!.name)!;
     for (let i = l.selection.length - 1; i >= 0; i--) {
         const sel = l.selection[i];
-        if (!sel.ownedBy()) continue;
+        if (!sel.ownedBy({ editAccess: true })) continue;
         if (gameStore.selectionHelperID === sel.uuid) {
             l.selection.splice(i, 1);
             continue;
         }
-        l.removeShape(sel, SyncMode.FULL_SYNC);
-        EventBus.$emit("SelectionInfo.Shape.Set", null);
-        EventBus.$emit("Initiative.Remove", sel.uuid);
+        if (l.removeShape(sel, SyncMode.FULL_SYNC)) EventBus.$emit("SelectionInfo.Shape.Set", null);
     }
 }
 

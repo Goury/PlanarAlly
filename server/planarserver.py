@@ -21,10 +21,13 @@ from aiohttp import web
 
 import api.http
 import routes
+from state.asset import asset_state
+from state.game import game_state
 
 # Force loading of socketio routes
 from api.socket import *
-from app import app, logger, sio, state
+from api.socket.constants import GAME_NS
+from app import app, logger, sio
 from config import config
 
 # This is a fix for asyncio problems on windows that make it impossible to do ctrl+c
@@ -37,8 +40,8 @@ if sys.platform.startswith("win"):
 
 
 async def on_shutdown(_):
-    for sid in list(state.sid_map.keys()):
-        await sio.disconnect(sid, namespace="/planarally")
+    for sid in [*game_state._sid_map.keys(), *asset_state._sid_map.keys()]:
+        await sio.disconnect(sid, namespace=GAME_NS)
 
 
 app.router.add_static("/static", "static")
@@ -53,6 +56,7 @@ app.router.add_get("/api/rooms", api.http.rooms.get_list)
 app.router.add_post("/api/rooms", api.http.rooms.create)
 app.router.add_post("/api/invite", api.http.claim_invite)
 app.router.add_get("/api/version", api.http.version.get_version)
+app.router.add_get("/api/changelog", api.http.version.get_changelog)
 
 if "dev" in sys.argv:
     app.router.add_route("*", "/{tail:.*}", routes.root_dev)

@@ -1,38 +1,3 @@
-<template>
-    <modal v-if="note !== null" :visible="visible" @close="visible = false" :mask="false">
-        <div
-            class="modal-header"
-            slot="header"
-            slot-scope="m"
-            draggable="true"
-            @dragstart="m.dragStart"
-            @dragend="m.dragEnd"
-        >
-            <span @click="$refs.title.select()">
-                <i class="fas fa-pencil-alt" style="font-size: 15px"></i>
-            </span>
-            <input v-model="note.title" ref="title" @change="updateNote" />
-            <div class="header-close" @click="visible = false">
-                <i class="far fa-window-close"></i>
-            </div>
-        </div>
-        <div class="modal-body">
-            <textarea
-                ref="textarea"
-                v-model="note.text"
-                :style="{ height: calcHeight() }"
-                @change="updateNote"
-            ></textarea>
-        </div>
-        <div class="modal-footer">
-            <button @click="removeNote">
-                <i class="far fa-trash-alt"></i>
-                Remove
-            </button>
-        </div>
-    </modal>
-</template>
-
 <script lang="ts">
 import Vue from "vue";
 import Component from "vue-class-component";
@@ -70,7 +35,7 @@ export default class NoteDialog extends Vue {
         if (this.note) gameStore.updateNote({ note: this.note, sync: true });
     }
     async removeNote(): Promise<void> {
-        const result = await (<Game>this.$parent).$refs.confirm.open("Are you sure you wish to remove this?");
+        const result = await (<Game>this.$parent).$refs.confirm.open(this.$t("game.ui.note.warning_msg").toString());
         if (result && this.note) {
             gameStore.removeNote({ note: this.note, sync: true });
             this.visible = false;
@@ -78,6 +43,41 @@ export default class NoteDialog extends Vue {
     }
 }
 </script>
+
+<template>
+    <modal v-if="note !== null" :visible="visible" @close="visible = false" :mask="false">
+        <div
+            class="modal-header"
+            slot="header"
+            slot-scope="m"
+            draggable="true"
+            @dragstart="m.dragStart"
+            @dragend="m.dragEnd"
+        >
+            <span @click="$refs.title.select()" :title="$t('game.ui.note.edit_title')">
+                <i aria-hidden="true" class="fas fa-pencil-alt" style="font-size: 15px"></i>
+            </span>
+            <input v-model="note.title" ref="title" @change="updateNote" />
+            <div class="header-close" @click="visible = false" :title="$t('common.close')">
+                <i aria-hidden="true" class="far fa-window-close"></i>
+            </div>
+        </div>
+        <div class="modal-body">
+            <textarea
+                ref="textarea"
+                v-model="note.text"
+                :style="{ height: calcHeight() }"
+                @change="updateNote"
+            ></textarea>
+        </div>
+        <div class="modal-footer">
+            <button @click="removeNote" :title="$t('game.ui.note.remove_note')">
+                <i aria-hidden="true" class="far fa-trash-alt"></i>
+                {{ $t("game.ui.note.remove_note") }}
+            </button>
+        </div>
+    </modal>
+</template>
 
 <style scoped>
 .modal-header {
@@ -93,6 +93,7 @@ export default class NoteDialog extends Vue {
     border: none;
     font-weight: bold;
     font-size: large;
+    margin-left: 5px;
 }
 
 .header-close {
@@ -112,7 +113,6 @@ export default class NoteDialog extends Vue {
 }
 
 .modal-footer {
-    padding-top: 0;
     padding: 10px;
     text-align: right;
 }
