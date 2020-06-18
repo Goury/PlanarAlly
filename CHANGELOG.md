@@ -7,6 +7,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+-   Dialog background was cut on the right side in some browsers because max-width was set to unreasonably low value
+
 ## [0.21.0] - 2020-06-13
 
 ### Added
