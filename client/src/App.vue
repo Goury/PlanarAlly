@@ -29,6 +29,7 @@ export default class App extends Vue {
 
 body {
     overscroll-behavior: contain;
+    overflow: hidden;
 }
 
 html,
