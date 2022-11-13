@@ -1,54 +1,48 @@
-<script lang="ts">
-import Vue from "vue";
-import Component from "vue-class-component";
-
-import AdminSettings from "./AdminSettings.vue";
-import GridSettings from "../GridSettings.vue";
-// import PermissionsDmSettings from "./permissions.vue";
-import VisionSettings from "../VisionSettings.vue";
+<script setup lang="ts">
+import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 
 import PanelModal from "../../../../core/components/modals/PanelModal.vue";
-import { EventBus } from "@/game/event-bus";
+import { uiStore } from "../../../../store/ui";
+import FloorSettings from "../location/FloorSettings.vue";
+import GridSettings from "../location/GridSettings.vue";
+import VariaSettings from "../location/VariaSettings.vue";
+import VisionSettings from "../location/VisionSettings.vue";
 
-@Component({
-    components: {
-        AdminSettings,
-        GridSettings,
-        // PermissionsDmSettings,
-        PanelModal,
-        VisionSettings,
+import AdminSettings from "./AdminSettings.vue";
+import { DmSettingCategory } from "./categories";
+
+const { t } = useI18n();
+
+const visible = computed({
+    get() {
+        return uiStore.state.showDmSettings;
     },
-})
-export default class DmSettings extends Vue {
-    visible = false;
+    set(visible: boolean) {
+        uiStore.showDmSettings(visible);
+    },
+});
 
-    mounted(): void {
-        EventBus.$on("DmSettings.Open", () => {
-            this.visible = true;
-        });
-    }
-
-    beforeDestroy(): void {
-        EventBus.$off("DmSettings.Open");
-    }
-
-    get categoryNames(): string[] {
-        return [
-            this.$t("common.admin").toString(),
-            this.$t("common.grid").toString(),
-            this.$t("common.vision").toString(),
-        ];
-    }
-}
+const categoryNames = computed(() => {
+    return [
+        DmSettingCategory.Admin,
+        DmSettingCategory.Grid,
+        DmSettingCategory.Vision,
+        DmSettingCategory.Floor,
+        DmSettingCategory.Varia,
+    ];
+});
 </script>
 
 <template>
-    <PanelModal :visible.sync="visible" :categories="categoryNames">
-        <template v-slot:title>{{ $t("game.ui.settings.dm.DmSettings.dm_settings") }}</template>
+    <PanelModal v-model:visible="visible" :categories="categoryNames" :applyTranslation="true">
+        <template v-slot:title>{{ t("game.ui.settings.dm.DmSettings.dm_settings") }}</template>
         <template v-slot:default="{ selection }">
-            <AdminSettings v-show="selection === 0"></AdminSettings>
-            <GridSettings :location="null" v-show="selection === 1"></GridSettings>
-            <VisionSettings :location="null" v-show="selection === 2"></VisionSettings>
+            <AdminSettings v-show="selection === DmSettingCategory.Admin" />
+            <GridSettings v-show="selection === DmSettingCategory.Grid" />
+            <VisionSettings v-show="selection === DmSettingCategory.Vision" />
+            <FloorSettings v-show="selection === DmSettingCategory.Floor" />
+            <VariaSettings v-show="selection === DmSettingCategory.Varia" />
         </template>
     </PanelModal>
 </template>

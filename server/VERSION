@@ -1,56 +1,59 @@
-0.21.0
+2022.2.3
 
 ### Added
 
--   Shape invisible toggle
-    -   Only players with vision access can see and interact with the shape
-    -   Public auras are still visible to all players (e.g. invisible creature with a torch would still shed light)
--   Build/Play mode
-    -   Show different set of tools dependening on the active mode
--   Movement access permission
--   Changelog modal if a new version comes out
--   Spawn locations
-    -   Define where shapes you move to other locations are spawned
--   Public toggle to ruler tool
--   Shape locked toggle
-    -   When locked, a shape cannot be moved/resized
-    -   Locked shapes can only be selected if no non-locked shapes are included in the selection area
-    -   Ctrl+l is a keybinding to toggle lock state of a selection group
--   Internationalization base
-    -   English as default and fallback locale
-    -   Chinese localization
-    -   German localization (some terminology like "Asset" or "Tracker" still english, until appropriate German term found)
-    -   Russian localization
-    -   A dropdown selection component to switch languages in both login page and the Client Options of main menu
+-   Colour picker now remembers the last 20 used colours for each user.
+-   [DM] Export all campaigns endpoint
+-   [DM] UI export campaign option in room details
+-   [DM] Import campaign support
+    -   Can import older saves (if the migration code is still available (i.e. < 1 year old))
+-   [2022.2.1][server] server config option to enable import/export, defaulting to False
+    -   given the experimental nature, it's better to not enable this by default
+    -   it's strongly recommended to only enable this if you run a private server for the moment
 
 ### Changed
 
--   During shape drag/move use a smaller version to do hitbox tests
-    -   This improves behaviour when going through a very tight hallway or a door
--   Delayed initiative updating during edit
--   In Play mode (see #added) the select tool will no longer allow resizing
--   Creating a new floor will no longer automatically move everyone to that floor
--   The version shown in the topleft area in-game will now be limited to the latest release version
--   Basic tokens will now have their default name set to their label instead of 'Unknown shape'
--   Mobile device users are now unable to trigger overscroll refresh by simply moving around
--   Polygon points now also respect grid snapping as all other shapes do during draw
+-   Add white outline to the door logic (un)lock icons
+-   Door logic can now specify which block settings to toggle
+-   Add double stroke to client viewport
+-   Show campaign loading animation earlier (in dashboard)
+-   Defeat cross now scales better with shape size
+-   Shape badge now scales better with shape size
+-   Show default "no" button in delete/leave campaign prompt
+-   Default location zoom level is now 0.2 instead of 1.0
+-   [server] Added log rotation
+-   [server] Restructure server files
 
 ### Fixed
 
--   Polygon server creation with initial vertices list breaks session
--   Player floor location not being remembered
--   Ruler not showing decimal points
--   DM settings/grid unit size showing invalid input on firefox for floating point numbers
--   Server showing JSON decode errors
--   Players not being able to update initiative effects
--   Active layer sometimes resetting on reload
--   DMs no longer being able to kick themselves
--   Some UI components not properly updating on shape reset
--   Area right of layer selector preventing draw/select
--   Keyboard center throwing error when no tokens are defined
--   Multiple bugs with initiative syncing
--   Three bugs with location specific options not properly loading/saving
--   Scrollbar on bottom of page in firefox when location bar does not fit the screen
--   Players can no longer remove or add floors
--   Players can no longer move their shape to other layers/floors/locations themselves
--   Bug where a light source with 0/0 radii would block all lights of that shape
+-   Exporting a campaign where there are images that have no specific asset associated with them, would fail
+-   Exporting a campaign was not properly copying the active pan and zoom info for users
+-   ExtraSettings svg section not updating immediately until changing tabs
+-   ExtraSettings remove svg not properly working
+-   ExtraSettings add svg not working for shapes with no prior svg properties
+-   Spawn locations loading wrong
+-   Teleport zones triggering from other floors
+-   Draw tool door permissions not saving
+-   Door logic toggle not immediately updating UI when shape properties are open
+-   Logic init edge cases breaking UI until refresh
+-   Redo logic on resize operation not remembering correct location when it was snapped
+-   Asset Manager correctly updates UI when using browser back/forward buttons
+-   Clear client viewports when changing location
+-   Dashboard navigation headers sometimes being wrongly styled
+-   Modal handling on firefox
+-   Colour picker resetting saturation panel to red when clicking
+-   Colour picker resetting opacity when setting hsv color
+-   Drawtool trying to add shape creation operation to undo stack when the shape was not valid
+-   Points modified by the polygon edit UI are not snappable until a refresh
+-   Logic Permission selector showing error in edgecase
+-   Asset socket was not cleaning up past connections
+-   Auras that are light sources, no longer appear as a black circle of doom when FOW is not turned on
+-   Undo/Redo not persisting to server for movement and rotation
+-   [server] Admin client was not built in docker
+-   [2022.2.1] Note export failing
+-   [2022.2.1] Markers not being exported
+-   [2022.2.2] Auras giving light when light source is turned off
+-   [2022.2.2] Ghost initiative entries showing up as ? that cannot be removed
+-   [2022.2.2] Database lock errors while importing during load
+-   [2022.2.2][server] Server not being able to start due to ModuleNotFoundError
+-   [2022.2.3][server] Windows executable builds not using the correct directory for certain files (e.g. config/assets)

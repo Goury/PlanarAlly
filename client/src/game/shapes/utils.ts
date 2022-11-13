@@ -1,81 +1,130 @@
-import { InvalidationMode, SyncMode } from "@/core/comm/types";
-import { uuidv4 } from "@/core/utils";
-import {
-    ServerAsset,
-    ServerAura,
+import { subtractP, toGP, Vector } from "../../core/geometry";
+import { baseAdjust } from "../../core/http";
+import { SyncMode, InvalidationMode } from "../../core/models/types";
+import { uuidv4 } from "../../core/utils";
+import { clientStore } from "../../store/client";
+import { floorStore } from "../../store/floor";
+import { gameStore } from "../../store/game";
+import { sendRemoveShapes } from "../api/emits/shape/core";
+import { addGroupMembers, createNewGroupForShapes, hasGroup } from "../groups";
+import { getGlobalId, getLocalId, reserveLocalId } from "../id";
+import type { GlobalId } from "../id";
+import { selectionState } from "../layers/selection";
+import type { LayerName } from "../models/floor";
+import type {
+    ServerShape,
+    ServerRect,
     ServerCircle,
     ServerCircularToken,
     ServerLine,
     ServerPolygon,
-    ServerRect,
-    ServerShape,
     ServerText,
-} from "@/game/comm/types/shapes";
-import { GlobalPoint, Vector } from "@/game/geom";
-import { layerManager } from "@/game/layers/manager";
-import { Asset } from "@/game/shapes/asset";
-import { Circle } from "@/game/shapes/circle";
-import { CircularToken } from "@/game/shapes/circulartoken";
-import { Line } from "@/game/shapes/line";
-import { Rect } from "@/game/shapes/rect";
-import { Shape } from "@/game/shapes/shape";
-import { Text } from "@/game/shapes/text";
-import { EventBus } from "../event-bus";
-import { gameStore } from "../store";
-import { Polygon } from "./polygon";
-import { socket } from "../api/socket";
+    ServerAsset,
+    ServerToggleComposite,
+} from "../models/shapes";
+import { addOperation } from "../operations/undo";
+import { accessSystem } from "../systems/access";
+import type { ServerShapeOwner } from "../systems/access/models";
+import type { AuraId, ServerAura } from "../systems/auras/models";
+import type { ServerTracker, TrackerId } from "../systems/trackers/models";
+import { TriangulationTarget, VisibilityMode, visionState } from "../vision/state";
 
-export function createShapeFromDict(shape: ServerShape): Shape | undefined {
-    let sh: Shape;
+import type { IShape } from "./interfaces";
+import { Asset } from "./variants/asset";
+import { Circle } from "./variants/circle";
+import { CircularToken } from "./variants/circularToken";
+import { Line } from "./variants/line";
+import { Polygon } from "./variants/polygon";
+import { Rect } from "./variants/rect";
+import { Text } from "./variants/text";
+import { ToggleComposite } from "./variants/toggleComposite";
+
+// eslint-disable-next-line
+export function createShapeFromDict(shape: ServerShape): IShape | undefined {
+    let sh: IShape;
 
     // A fromJSON and toJSON on Shape would be cleaner but ts does not allow for static abstracts so yeah.
 
+    if (shape.group !== undefined && shape.group !== null) {
+        const group = hasGroup(shape.group);
+        if (group === undefined) {
+            console.log("Missing group info detected");
+        } else {
+            addGroupMembers(shape.group, [{ uuid: reserveLocalId(shape.uuid), badge: shape.badge }], false);
+        }
+    }
+
     // Shape Type specifics
 
-    const refPoint = new GlobalPoint(shape.x, shape.y);
+    const refPoint = toGP(shape.x, shape.y);
     if (shape.type_ === "rect") {
-        const rect = <ServerRect>shape;
-        sh = new Rect(refPoint, rect.width, rect.height, rect.fill_colour, rect.stroke_colour, rect.uuid);
+        const rect = shape as ServerRect;
+        sh = new Rect(refPoint, rect.width, rect.height, {
+            fillColour: rect.fill_colour,
+            strokeColour: [rect.stroke_colour],
+            uuid: rect.uuid,
+        });
     } else if (shape.type_ === "circle") {
-        const circ = <ServerCircle>shape;
-        sh = new Circle(refPoint, circ.radius, circ.fill_colour, circ.stroke_colour, circ.uuid);
+        const circ = shape as ServerCircle;
+        sh = new Circle(refPoint, circ.radius, {
+            fillColour: circ.fill_colour,
+            strokeColour: [circ.stroke_colour],
+            uuid: circ.uuid,
+        });
     } else if (shape.type_ === "circulartoken") {
-        const token = <ServerCircularToken>shape;
-        sh = new CircularToken(
-            refPoint,
-            token.radius,
-            token.text,
-            token.font,
-            token.fill_colour,
-            token.stroke_colour,
-            token.uuid,
-        );
+        const token = shape as ServerCircularToken;
+        sh = new CircularToken(refPoint, token.radius, token.text, token.font, {
+            fillColour: token.fill_colour,
+            strokeColour: [token.stroke_colour],
+            uuid: token.uuid,
+        });
     } else if (shape.type_ === "line") {
-        const line = <ServerLine>shape;
-        sh = new Line(refPoint, new GlobalPoint(line.x2, line.y2), line.line_width, line.stroke_colour, line.uuid);
+        const line = shape as ServerLine;
+        sh = new Line(refPoint, toGP(line.x2, line.y2), {
+            lineWidth: line.line_width,
+            strokeColour: [line.stroke_colour],
+            uuid: line.uuid,
+        });
     } else if (shape.type_ === "polygon") {
-        const polygon = <ServerPolygon>shape;
+        const polygon = shape as ServerPolygon;
         sh = new Polygon(
             refPoint,
-            polygon.vertices.map(v => new GlobalPoint(v.x, v.y)),
-            polygon.fill_colour,
-            polygon.stroke_colour,
-            polygon.line_width,
-            polygon.open_polygon,
-            polygon.uuid,
+            polygon.vertices.map((v) => toGP(v)),
+            {
+                fillColour: polygon.fill_colour,
+                strokeColour: [polygon.stroke_colour],
+                lineWidth: [polygon.line_width],
+                openPolygon: polygon.open_polygon,
+                uuid: polygon.uuid,
+            },
         );
     } else if (shape.type_ === "text") {
-        const text = <ServerText>shape;
-        sh = new Text(refPoint, text.text, text.font, text.angle, text.fill_colour, text.stroke_colour, text.uuid);
+        const text = shape as ServerText;
+        sh = new Text(refPoint, text.text, text.font_size, {
+            fillColour: text.fill_colour,
+            strokeColour: [text.stroke_colour],
+            uuid: text.uuid,
+        });
     } else if (shape.type_ === "assetrect") {
-        const asset = <ServerAsset>shape;
+        const asset = shape as ServerAsset;
         const img = new Image(asset.width, asset.height);
-        if (asset.src.startsWith("http")) img.src = new URL(asset.src).pathname;
-        else img.src = asset.src;
-        sh = new Asset(img, refPoint, asset.width, asset.height, asset.uuid);
+        if (asset.src.startsWith("http")) img.src = baseAdjust(new URL(asset.src).pathname);
+        else img.src = baseAdjust(asset.src);
+        sh = new Asset(img, refPoint, asset.width, asset.height, { uuid: asset.uuid, loaded: false });
         img.onload = () => {
-            layerManager.getLayer(shape.floor, shape.layer)!.invalidate(true);
+            (sh as Asset).setLoaded();
         };
+    } else if (shape.type_ === "togglecomposite") {
+        const toggleComposite = shape as ServerToggleComposite;
+
+        sh = new ToggleComposite(
+            refPoint,
+            getLocalId(toggleComposite.active_variant)!,
+            toggleComposite.variants.map((v) => ({ uuid: getLocalId(v.uuid)!, name: v.name })),
+            {
+                uuid: toggleComposite.uuid,
+            },
+        );
     } else {
         return undefined;
     }
@@ -84,105 +133,158 @@ export function createShapeFromDict(shape: ServerShape): Shape | undefined {
 }
 
 export function copyShapes(): void {
-    const layer = layerManager.getLayer(layerManager.floor!.name);
-    if (!layer) return;
-    if (!layer.selection) return;
+    if (!selectionState.hasSelection) return;
     const clipboard: ServerShape[] = [];
-    for (const shape of layer.selection) {
-        if (!shape.ownedBy({ editAccess: true })) continue;
-        if (gameStore.selectionHelperID === shape.uuid) continue;
+    for (const shape of selectionState.get({ includeComposites: true })) {
+        if (!accessSystem.hasAccessTo(shape.id, false, { edit: true })) continue;
+        if (shape.groupId === undefined) {
+            createNewGroupForShapes([shape.id]);
+        }
         clipboard.push(shape.asDict());
     }
     gameStore.setClipboard(clipboard);
-    gameStore.setClipboardPosition(gameStore.screenCenter);
+    gameStore.setClipboardPosition(clientStore.screenCenter);
 }
 
-export function pasteShapes(targetLayer?: string): Shape[] {
-    const layer = layerManager.getLayer(layerManager.floor!.name, targetLayer);
+export function pasteShapes(targetLayer?: LayerName): readonly IShape[] {
+    const layer = floorStore.getLayer(floorStore.currentFloor.value!, targetLayer);
     if (!layer) return [];
-    if (!gameStore.clipboard) return [];
-    layer.selection = [];
-    let offset = gameStore.screenCenter.subtract(gameStore.clipboardPosition);
-    gameStore.setClipboardPosition(gameStore.screenCenter);
+    const gameState = gameStore.state;
+    if (gameState.clipboard.length === 0) return [];
+
+    selectionState.clear();
+
+    gameStore.setClipboardPosition(clientStore.screenCenter);
+    let offset = subtractP(clientStore.screenCenter, gameState.clipboardPosition);
     // Check against 200 as that is the squared length of a vector with size 10, 10
     if (offset.squaredLength() < 200) {
         offset = new Vector(10, 10);
     }
-    for (const clip of gameStore.clipboard) {
-        clip.x += offset.x;
-        clip.y += offset.y;
-        const ogUuid = clip.uuid;
-        clip.uuid = uuidv4();
-        // Trackers
-        const oldTrackers = clip.trackers;
-        clip.trackers = [];
-        for (const tracker of oldTrackers) {
-            const newTracker: Tracker = {
-                ...tracker,
-                uuid: uuidv4(),
-            };
-            clip.trackers.push(newTracker);
+
+    const shapeMap: Map<GlobalId, GlobalId> = new Map();
+    const composites: ServerToggleComposite[] = [];
+    const serverShapes: ServerShape[] = [];
+
+    const groupShapes: Record<string, GlobalId[]> = {};
+
+    for (const clip of gameState.clipboard) {
+        const newShape: ServerShape = Object.assign({}, clip, { auras: [], labels: [], owners: [], trackers: [] });
+        newShape.uuid = uuidv4();
+        newShape.x = clip.x + offset.x;
+        newShape.y = clip.y + offset.y;
+
+        shapeMap.set(clip.uuid, newShape.uuid);
+
+        if (clip.type_ === "polygon") {
+            (newShape as ServerPolygon).vertices = (clip as ServerPolygon).vertices.map((p) => [
+                p[0] + offset.x,
+                p[1] + offset.y,
+            ]);
         }
+
+        // Trackers
+        newShape.trackers = [];
+        for (const tracker of clip.trackers) {
+            const newTracker: ServerTracker = {
+                ...tracker,
+                uuid: uuidv4() as unknown as TrackerId,
+            };
+            newShape.trackers.push(newTracker);
+        }
+
         // Auras
-        const oldAuras = clip.auras;
-        clip.auras = [];
-        for (const aura of oldAuras) {
+        newShape.auras = [];
+        for (const aura of clip.auras) {
             const newAura: ServerAura = {
                 ...aura,
-                uuid: uuidv4(),
+                uuid: uuidv4() as unknown as AuraId,
             };
-            clip.auras.push(newAura);
+            newShape.auras.push(newAura);
         }
+
+        // Owners
+        newShape.owners = [];
+        for (const owner of clip.owners) {
+            const newOwner: ServerShapeOwner = {
+                ...owner,
+                shape: newShape.uuid,
+            };
+            newShape.owners.push(newOwner);
+        }
+
         // Badge
-        const options = clip.options ? new Map(JSON.parse(clip.options)) : new Map();
-        let groupLeader: Shape | undefined;
-        if (options.has("groupId")) {
-            groupLeader = layerManager.UUIDMap.get(<string>options.get("groupId"));
+        if (clip.group !== undefined) {
+            // group join needs to happen after shape creation
+            newShape.group = undefined;
+            if (!(clip.group in groupShapes)) {
+                groupShapes[clip.group] = [];
+            }
+            groupShapes[clip.group].push(newShape.uuid);
+        }
+        if (clip.type_ === "togglecomposite") {
+            composites.push(newShape as ServerToggleComposite);
         } else {
-            groupLeader = layerManager.UUIDMap.get(ogUuid)!;
+            serverShapes.push(newShape);
         }
-        if (groupLeader === undefined) console.error("Missing group leader on paste");
-        else {
-            if (!groupLeader.options.has("groupInfo")) groupLeader.options.set("groupInfo", []);
-            const groupMembers = groupLeader.getGroupMembers();
-            clip.badge = groupMembers.reduce((acc: number, sh: Shape) => Math.max(acc, sh.badge ?? 1), 0) + 1;
-            groupLeader.options.set("groupInfo", [...groupLeader.options.get("groupInfo"), clip.uuid]);
-            options.set("groupId", groupLeader.uuid);
-            clip.options = JSON.stringify([...options]);
-            if (!groupLeader.preventSync)
-                socket.emit("Shape.Update", { shape: groupLeader.asDict(), redraw: false, temporary: false });
-        }
-        // Finalize
-        const shape = createShapeFromDict(clip);
+    }
+
+    for (const composite of composites) {
+        serverShapes.push({
+            ...composite,
+            active_variant: shapeMap.get(composite.active_variant)!,
+            variants: composite.variants.map((v) => ({ ...v, uuid: shapeMap.get(v.uuid)! })),
+        } as ServerToggleComposite); // make sure it's added after the regular shapes
+    }
+
+    // Finalize
+    for (const serverShape of serverShapes) {
+        const shape = createShapeFromDict(serverShape);
         if (shape === undefined) continue;
+
         layer.addShape(shape, SyncMode.FULL_SYNC, InvalidationMode.WITH_LIGHT);
-        layer.selection.push(shape);
+
+        if (!(shape.options.skipDraw ?? false)) selectionState.push(shape);
     }
-    if (layer.selection.length === 1) EventBus.$emit("SelectionInfo.Shape.Set", layer.selection[0]);
-    else EventBus.$emit("SelectionInfo.Shape.Set", null);
+
+    for (const [group, shapes] of Object.entries(groupShapes)) {
+        addGroupMembers(
+            group,
+            shapes.map((uuid) => ({ uuid: getLocalId(uuid)! })),
+            true,
+        );
+    }
+    // const groupShape = groupShapes.find((s) => s.uuid === shape.uuid);
+    //     if (groupShape !== undefined) {
+    //         addGroupMembers(groupShape.group, [{ uuid: groupShape.uuid }], true);
+    //     }
+
     layer.invalidate(false);
-    return layer.selection;
+    return selectionState.get({ includeComposites: false });
 }
 
-// todo: refactor with removeShape in api/events/shape
-export function deleteShapes(): void {
-    if (layerManager.getLayer(layerManager.floor!.name) === undefined) {
-        console.log("No active layer selected for delete operation");
-        return;
+export function deleteShapes(shapes: readonly IShape[], sync: SyncMode): void {
+    const removed: GlobalId[] = [];
+    const recalculateIterative = visionState.state.mode === VisibilityMode.TRIANGLE_ITERATIVE;
+    let recalculateVision = false;
+    let recalculateMovement = false;
+    for (let i = shapes.length - 1; i >= 0; i--) {
+        const sel = shapes[i];
+        if (sync !== SyncMode.NO_SYNC && !accessSystem.hasAccessTo(sel.id, false, { edit: true })) continue;
+        removed.push(getGlobalId(sel.id));
+        if (sel.blocksVision) recalculateVision = true;
+        if (sel.blocksMovement) recalculateMovement = true;
+        sel.layer.removeShape(sel, { sync: SyncMode.NO_SYNC, recalculate: recalculateIterative, dropShapeId: true });
     }
-    const l = layerManager.getLayer(layerManager.floor!.name)!;
-    for (let i = l.selection.length - 1; i >= 0; i--) {
-        const sel = l.selection[i];
-        if (!sel.ownedBy({ editAccess: true })) continue;
-        if (gameStore.selectionHelperID === sel.uuid) {
-            l.selection.splice(i, 1);
-            continue;
-        }
-        if (l.removeShape(sel, SyncMode.FULL_SYNC)) EventBus.$emit("SelectionInfo.Shape.Set", null);
+    if (sync !== SyncMode.NO_SYNC) sendRemoveShapes({ uuids: removed, temporary: sync === SyncMode.TEMP_SYNC });
+    if (!recalculateIterative) {
+        if (recalculateMovement)
+            visionState.recalculate({ target: TriangulationTarget.MOVEMENT, floor: floorStore.state.floorIndex });
+        if (recalculateVision)
+            visionState.recalculate({ target: TriangulationTarget.VISION, floor: floorStore.state.floorIndex });
+        floorStore.invalidateVisibleFloors();
     }
-}
 
-export function cutShapes(): void {
-    copyShapes();
-    deleteShapes();
+    if (sync === SyncMode.FULL_SYNC) {
+        addOperation({ type: "shaperemove", shapes: shapes.map((s) => s.asDict()) });
+    }
 }

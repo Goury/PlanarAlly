@@ -2,22 +2,27 @@
     "locale": {
         "select": "Select Language:",
         "en": "English",
-        "zh": "中文",
+        "zh": "简体中文",
+        "tw": "繁體中文",
         "de": "Deutsch",
-        "ru": "Русский"
+        "ru": "Русский",
+        "dk": "Dansk",
+        "es": "Español",
+        "it": "Italiano"
     },
     "assetManager": {
-        "contextMenu": {
+        "AssetContextMenu": {
             "new_name": "New name:",
             "renaming_NAME": "Renaming {name}",
             "ask_remove": "Are you sure you wish to remove this?"
         },
-        "manager": {
+        "AssetManager": {
             "new_folder_name": "New folder name",
             "uploading": "Uploading files",
             "create_folder": "Create folder",
             "upload_files": "Upload files",
-            "title": "Asset manager"
+            "title": "Asset manager",
+            "download_files": "Download files"
         }
     },
     "common": {
@@ -35,6 +40,7 @@
         "warning": "Warning",
         "value": "Value",
         "toggle_public_private": "Toggle public / private",
+        "toggle_draw": "Draw on token",
         "initiative": "Initiative",
         "search": "Search",
         "name": "Name",
@@ -46,6 +52,8 @@
         "markers": "Markers",
         "border_color": "Border colour",
         "fill_color": "Fill colour",
+        "fill_color_short": "Fill",
+        "stroke_color_short": "Stroke",
         "trackers": "Trackers",
         "auras": "Auras",
         "labels": "Labels",
@@ -58,10 +66,16 @@
         "vision": "Vision",
         "tokens": "Tokens",
         "shape": "Shape",
-        "colors": "Colours",
+        "colour": "Colour",
+        "colours": "Colours",
         "version": "version",
         "confirm": "Confirm",
-        "cancel": "Cancel"
+        "cancel": "Cancel",
+        "insert_one_character": "Please insert at least one character",
+        "name_already_in_use": "This name is already in use!",
+        "varia": "Varia",
+        "select": "Select",
+        "or": "or"
     },
     "auth": {
         "login": {
@@ -71,14 +85,18 @@
     },
     "core": {
         "components": {
-            "inputCopy": {
+            "InputCopyElement": {
                 "copied": "Copied!",
                 "copy": "Copy"
+            },
+            "selectionbox": {
+                "non_empty_warning": "Enter a non-empty custom value!",
+                "already_exists_warning": "That choice already exists!"
             }
         }
     },
     "dashboard": {
-        "main": {
+        "Dashboard": {
             "session_name": "Campaign Name",
             "account_settings": "Account Settings",
             "logout": "Logout",
@@ -90,27 +108,33 @@
     },
     "game": {
         "ui": {
-            "floors": {
+            "FloorSelect": {
                 "new_name": "New floor name",
                 "creation": "Floor Creation",
                 "warning_msg_Z": "Are you sure you wish to remove the {z} floor?",
                 "delete_floor": "Delete floor",
-                "add_new_floor": "Add new floor"
+                "add_new_floor": "Add new floor",
+                "toggle_visibility": "Toggle floor visibility for players",
+                "rename_icon_hover": "Rename this floor",
+                "rename_header_title": "Renaming Floor"
             },
             "initiative": {
-                "initiative": {
-                    "new_effect": "New effect",
-                    "add_timed_effect": "Add timed effect",
-                    "toggle_group": "Toggle individual / group initiative",
-                    "delete_init": "Delete initiative",
-                    "round_N": "Round {n}",
-                    "vision_log_msg": "Auto lock vision (only show vision active token)",
-                    "camera_log_msg": "Auto camera lock on active token",
-                    "reset_round": "Reset rounds/turns",
-                    "next": "Next"
-                }
+                "new_effect": "New effect",
+                "add_timed_effect": "Add timed effect",
+                "toggle_group": "Toggle individual / group initiative",
+                "delete_init": "Delete initiative",
+                "delete_effect": "Delete effect",
+                "round_N": "Round {n}",
+                "vision_log_msg": "Auto lock vision (only show vision of active token)",
+                "camera_log_msg": "Auto camera lock on active token",
+                "reset_round": "Reset rounds/turns",
+                "next": "Next",
+                "previous": "Previous",
+                "clear": "Clear initiatives",
+                "change_sort": "Change sorting",
+                "settings": "Settings"
             },
-            "labels": {
+            "LabelManager": {
                 "category": "Category",
                 "visible": "Visible",
                 "delete": "Delete",
@@ -122,29 +146,25 @@
                 "no_exist_msg": "No labels exist yet"
             },
             "menu": {
-                "locations": {
+                "LocationBar": {
                     "new_location_name": "New location name:",
                     "create_new_location": "Create new location",
                     "add_new_location": "Add new location",
                     "show_specific_pl": "Show specific players"
                 },
-                "menu": {
+                "MenuBar": {
                     "new_note": "New note",
                     "open_asset_manager": "Open asset manager",
                     "no_assets": "No assets",
                     "create_note": "Create note",
                     "delete_marker": "Delete marker",
                     "no_notes": "No notes",
-                    "dm_options": "DM Options",
+                    "dm_settings": "DM Settings",
                     "no_markers": "No markers",
-                    "client_options": "Client Options",
-                    "grid_color_set": "Grid Colour:",
-                    "fow_color_set": "FOW Colour:",
-                    "ruler_color_set": "Ruler Colour:",
-                    "invert_alt_set": "Invert ALT behaviour"
+                    "client_settings": "Client Settings"
                 }
             },
-            "note": {
+            "NoteDialog": {
                 "warning_msg": "Are you sure you wish to remove this?",
                 "edit_title": "Edit title",
                 "remove_note": "Remove note"
@@ -160,6 +180,10 @@
                         "default": "Default",
                         "add_access": "Add access"
                     },
+                    "logic": {
+                        "logic": "Logic",
+                        "door": "Door"
+                    },
                     "dialog": {
                         "current_value": "Current value",
                         "remove_tracker": "Remove tracker",
@@ -169,18 +193,23 @@
                         "edit_asset": "Edit asset",
                         "is_a_token": "Is a token",
                         "is_invisible": "Is invisible",
+                        "is_defeated": "Is defeated",
                         "is_locked": "Is locked",
                         "show_badge": "Show badge",
+                        "show_annotation": "Is public",
                         "block_vision_light": "Blocks vision/light",
                         "block_movement": "Blocks movement"
                     }
                 },
-                "select_info": {
+                "SelectionInfo": {
                     "open_shape_props": "Open shape properties",
                     "quick_edit_tracker": "Quick edit tracker",
-                    "quick_edit_aura": "Quick edit aura"
+                    "quick_edit_aura": "Quick edit aura",
+                    "lock": "Toggle lock/unlock",
+                    "new_value_NAME": "New {name} value:",
+                    "updating_NAME": "Updating {name}"
                 },
-                "shapecontext": {
+                "ShapeContext": {
                     "show_initiative": "Show initiative",
                     "add_initiative": "Add initiative",
                     "add_all_initiative": "Add all to initiative",
@@ -189,10 +218,35 @@
                     "delete_shapes": "Delete shapes",
                     "show_props": "Show properties",
                     "remove_marker": "Remove marker",
-                    "set_marker": "Set marker"
+                    "set_marker": "Set marker",
+                    "no_spawn_set_title": "Could not move shapes",
+                    "no_spawn_set_text": "The destination has no spawn locations configured. Make sure to create at least one by using the context-menu in the destination location."
                 }
             },
             "settings": {
+                "client": {
+                    "ClientSettings": {
+                        "client_settings": "Client Settings"
+                    },
+                    "DisplaySettings": {
+                        "use_high_dpi": "Use HiDPI/retina if applicable",
+                        "grid_size_in_pixels": "Size (in pixels):",
+                        "use_as_physical_gameboard": "Use as physical gameboard",
+                        "mini_size_in_inches": "Mini size (in inches)",
+                        "ppi": "Pixel density (PPI)"
+                    },
+                    "BehaviourSettings": {
+                        "invert_alt_set": "Invert ALT behaviour",
+                        "disable_scroll_to_zoom": "Disable scroll to zoom"
+                    },
+                    "InitiativeSettings": {
+                        "camera_lock": "Lock camera to active (owned) tokens",
+                        "vision_lock": "Lock vision to active (owned) tokens",
+                        "effect_visibility": "When to show effects",
+                        "effect_always": "Always",
+                        "effect_active": "Active and on-hover"
+                    }
+                },
                 "dm": {
                     "AdminSettings": {
                         "delete_session_msg_CREATOR_ROOM": "ENTER {creator}/{room} TO CONFIRM CAMPAIGN REMOVAL.",
@@ -215,26 +269,44 @@
                         "dm_settings": "DM Settings"
                     }
                 },
+                "floor": {
+                    "title": "Floor Settings"
+                },
                 "common": {
                     "overridden_msg": "Some of these settings can be overriden by location specific settings",
                     "overridden_highlight": "highlighted",
-                    "reset_default": "Reset to the campaign default",
+                    "reset_default": "Reset to the default",
+                    "sync_default": "Make this the new default",
                     "overridden_highlight_path": "Settings that override the campaign defaults are {0}"
                 },
                 "GridSettings": {
                     "unit_size_in_UNIT": "Unit Size (in {unit})",
                     "use_grid": "Use grid",
-                    "grid_size_in_pixels": "Grid Size (in pixels):",
-                    "size_unit": "Size Unit"
+                    "size_unit": "Size Unit",
+                    "grid_type": "Grid Type",
+                    "SQUARE": "Squares",
+                    "POINTY_HEX": "Pointy Hexagons",
+                    "FLAT_HEX": "Flat Hexagons"
                 },
-                "location": {
+                "FloorSettings": {
+                    "backgrounds": "Map backgrounds",
+                    "air_background": "Air floor(s)",
+                    "ground_background": "Ground floor(s)",
+                    "underground_background": "Underground floor(s)"
+                },
+                "VariaSettings": {
+                    "movePlayerOnTokenChange": "Move player(s) when a token they own changes location"
+                },
+                "LocationBar": {
                     "LocationAdminSettings": {
                         "remove_location_msg_NAME": "Are you sure you wish to remove location {name}",
                         "remove_location_yes": "Yes, delete this location",
                         "remove_location_no": "please no",
                         "move_existing_pl": "Move existing players on this location",
                         "delete_this_location": "Delete this location",
-                        "remove_location": "Remove Location"
+                        "archive_this_location": "Archive this location",
+                        "clone_this_location": "Clone this location",
+                        "choose_room": "Choose room"
                     },
                     "LocationSettings": {
                         "location_settings": "Location Settings:"
@@ -259,29 +331,53 @@
                     "experimental": "Experimental"
                 }
             },
+            "templates": {
+                "choose": "Choose Template",
+                "save": "Save Template",
+                "overwrite": "Overwrite",
+                "create_new": "Create new"
+            },
             "tools": {
-                "createtoken_modal": {
+                "CreateTokenModal": {
                     "create_basic_token": "Create basic token",
                     "text": "Text",
                     "fill": "Fill:",
                     "border": "Border:"
                 },
-                "defaultcontext": {
+                "DefaultContext": {
                     "bring_pl": "Bring players",
                     "create_basic_token": "Create basic token",
-                    "show_initiative": "Show initiative"
+                    "show_initiative": "Show initiative",
+                    "create_spawn_location": "Create spawn location",
+                    "new_spawn_question": "What should this spawn location be named?",
+                    "new_spawn_title": "Creating new spawn location"
                 },
-                "draw": {
+                "DrawTool": {
                     "foreground_color": "Foreground colour",
                     "background_color": "Background colour",
                     "mode": "Mode",
                     "closed_polygon": "Closed polygon?",
-                    "brush_size": "Brush size"
+                    "brush_size": "Brush size",
+                    "font_size": "Font size",
+                    "square": "square",
+                    "circle": "circle",
+                    "draw-polygon": "polygon",
+                    "paint-brush": "brush",
+                    "normal": "normal",
+                    "reveal": "reveal",
+                    "hide": "hide",
+                    "erase": "erase",
+                    "cone": "cone",
+                    "text": "text",
+                    "shape-category": "Basic settings",
+                    "vision-category": "Vision settings",
+                    "logic-category": "Logic settings",
+                    "door": "Add simple door logic"
                 },
-                "filter": {
+                "FilterTool": {
                     "no_category": "no category"
                 },
-                "map": {
+                "MapTool": {
                     "drag_to_resize": "Drag an area you wish to resize",
                     "select_shape_msg": "Please select a shape first.",
                     "set_target_grid_cells": "Set target grid cells",
@@ -290,8 +386,12 @@
                     "apply": "APPLY",
                     "cancel": "CANCEL"
                 },
-                "ruler": {
+                "RulerTool": {
                     "share": "Share with others"
+                },
+                "SpellTool": {
+                    "size": "Size",
+                    "range": "Range (radius)"
                 },
                 "tools": {
                     "change_mode": "Change mode"
@@ -314,15 +414,6 @@
         "dm": "dm",
         "fow": "fow"
     },
-    "draw": {
-        "square": "square",
-        "circle": "circle",
-        "draw-polygon": "draw-polygon",
-        "paint-brush": "paint-brush",
-        "normal": "normal",
-        "reveal": "reveal",
-        "hide": "hide"
-    },
     "tool": {
         "Build": "Build",
         "Play": "Play",
@@ -333,10 +424,12 @@
         "Ping": "Ping",
         "Map": "Map",
         "Filter": "Filter",
-        "Vision": "Vision"
+        "Vision": "Vision",
+        "Spell": "Spell",
+        "Dice": "Dice"
     },
     "settings": {
-        "account": {
+        "AccountSettings": {
             "no_pwd_msg": "No new password given!",
             "pwd_not_match": "The password fields don't match!",
             "server_request_error": "Something went wrong during the server request",
@@ -355,7 +448,7 @@
         },
         "settings": {
             "account_settings": "Account Settings",
-            "account": "Account"
+            "AccountSettings": "Account"
         }
     }
 }

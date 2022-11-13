@@ -1,14 +1,14 @@
+import tinycolor from "tinycolor2";
+
+import type { GlobalId } from "../game/id";
+
 // Reference: https://stackoverflow.com/questions/105034/create-guid-uuid-in-javascript
-export function uuidv4(): string {
-    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
+export function uuidv4(): GlobalId {
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
         const r = (Math.random() * 16) | 0;
         const v = c === "x" ? r : (r & 0x3) | 0x8;
         return v.toString(16);
-    });
-}
-
-export function capitalize(text: string): string {
-    return text.charAt(0).toUpperCase() + text.slice(1);
+    }) as GlobalId;
 }
 
 export function alphSort(a: string, b: string): number {
@@ -18,39 +18,14 @@ export function alphSort(a: string, b: string): number {
 
 export function toSnakeCase(s: string): string {
     return s
-        .replace(/\.?([A-Z]+)/g, function(x, y) {
+        .replace(/\.?([A-Z]+)/g, function (x, y) {
             return "_" + y.toLowerCase();
         })
         .replace(/^_/, "");
 }
 
-export function getHTMLFont(element: HTMLElement): string {
-    let font = element.style.font;
-    while (font === null && element.parentElement !== null) {
-        element = element.parentElement;
-        font = element.style.font;
-    }
-    if (font === null) font = window.getComputedStyle(document.body).getPropertyValue("font");
-    return font;
-}
-
-export function getHTMLTextWidth(text: string, font: string): number {
-    let fakeElement = <HTMLCanvasElement>document.getElementById("emptycanvas");
-    if (fakeElement === null) {
-        fakeElement = document.createElement("canvas");
-        fakeElement.id = "emptycanvas";
-        fakeElement.style.display = "";
-        document.body.appendChild(fakeElement);
-    }
-    const ctx = fakeElement.getContext("2d")!;
-    ctx.font = font;
-    return Math.ceil(ctx.measureText(text).width);
-}
-
-export function partition<T>(arr: T[], predicate: (n: T) => boolean): T[][] {
-    const ret: T[][] = [[], []];
-    arr.forEach(n => (predicate(n) ? ret[1].push(n) : ret[0].push(n)));
-    return ret;
+export function randomInterval(min: number, max: number): number {
+    return Math.random() * (max - min) + min;
 }
 
 export function calcFontScale(ctx: CanvasRenderingContext2D, text: string, r: number): number {
@@ -59,50 +34,34 @@ export function calcFontScale(ctx: CanvasRenderingContext2D, text: string, r: nu
     return (Math.cos(Math.atan(fontSize / fontWidth)) * 2 * r) / fontWidth;
 }
 
-export function fixedEncodeURIComponent(str: string): string {
-    return encodeURIComponent(str).replace(/[!'()*]/g, c => {
-        return "%" + c.charCodeAt(0).toString(16);
-    });
+export async function getErrorReason(response: Response): Promise<string> {
+    const responseText: string = await response.text();
+    // responseText will be "<statusCode>: <error message>"
+    // trim that down, to just return the error message
+    const index = responseText.indexOf(":");
+    if (index >= 0) {
+        return responseText.substring(index + 1).trim();
+    }
+    return responseText;
 }
 
-export class OrderedMap<K, V> {
-    keys: K[] = [];
-    values: V[] = [];
-
-    get length(): number {
-        return this.keys.length;
-    }
-
-    get(key: K): V {
-        return this.values[this.keys.indexOf(key)];
-    }
-    getIndexValue(idx: number): V {
-        return this.values[idx];
-    }
-    getIndexKey(idx: number): K {
-        return this.keys[idx];
-    }
-    set(key: K, value: V): void {
-        this.keys.push(key);
-        this.values.push(value);
-    }
-    has(key: K): boolean {
-        return this.indexOf(key) >= 0;
-    }
-    indexOf(element: K): number {
-        return this.keys.indexOf(element);
-    }
-    remove(element: K): void {
-        const idx = this.indexOf(element);
-        this.keys.splice(idx, 1);
-        this.values.splice(idx, 1);
-    }
+export function ctrlOrCmdPressed(event: KeyboardEvent | MouseEvent | TouchEvent): boolean {
+    if (navigator.platform.includes("Mac")) return event.metaKey;
+    return event.ctrlKey;
 }
 
-export async function postFetch(url: string, data?: any): Promise<Response> {
-    return await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data ?? {}),
-    });
+export function mostReadable(colour: string): string {
+    return tinycolor.mostReadable(colour, ["#000", "#fff"]).toHexString();
+}
+
+export function getTarget(event: Event): HTMLInputElement {
+    return event.target as HTMLInputElement;
+}
+
+export function getValue(event: Event): string {
+    return getTarget(event).value;
+}
+
+export function getChecked(event: Event): boolean {
+    return getTarget(event).checked;
 }

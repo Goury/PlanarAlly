@@ -1,19 +1,27 @@
-import Vue from "vue";
+import "../style.css";
 
-import App from "@/App.vue";
-import { router } from "@/router";
-import { rootStore } from "@/store";
-import i18n from "./i18n";
+import { FontAwesomeIcon } from "@fortawesome/vue-fontawesome";
+import { createApp } from "vue";
+import Toast, { POSITION } from "vue-toastification";
+import type { PluginOptions } from "vue-toastification";
 
-Vue.config.productionTip = false;
-Vue.config.devtools = true;
-Vue.config.performance = true;
+import App from "./App.vue";
+import { PlanarAllyModalsPlugin } from "./core/plugins/modals/plugin";
+import { loadFontAwesome } from "./fa";
+import { i18n } from "./i18n";
+import { router } from "./router";
 
-export const app = new Vue({
-    router,
-    store: rootStore,
-    i18n,
-    render: h => h(App),
-}).$mount("#app");
+loadFontAwesome();
 
-(<any>window).app = app;
+const toastOptions: PluginOptions = {
+    position: POSITION.BOTTOM_RIGHT,
+    shareAppContext: true,
+};
+
+const app = createApp(App);
+app.use(router)
+    .use(i18n)
+    .use(Toast, toastOptions)
+    .use(PlanarAllyModalsPlugin)
+    .component("font-awesome-icon", FontAwesomeIcon)
+    .mount("body");

@@ -1,23 +1,22 @@
 {
     "compilerOptions": {
-        "target": "es6",
+        "target": "esnext",
         "module": "esnext",
         "strict": true,
         "jsx": "preserve",
         "importHelpers": true,
         "moduleResolution": "node",
-        "experimentalDecorators": true,
+        "noUnusedLocals": true,
         "esModuleInterop": true,
         "allowSyntheticDefaultImports": true,
+        "useDefineForClassFields": true,
         "sourceMap": true,
         "baseUrl": ".",
         "outDir": "dist",
-        "types": ["webpack-env", "jest"],
-        "paths": {
-            "@/*": ["src/*"]
-        },
-        "lib": ["es6", "dom", "dom.iterable", "scripthost", "es2016.array.include", "es2019"]
+        "types": ["vite/client", "@intlify/vite-plugin-vue-i18n/client"],
+        "lib": ["esnext", "dom", "dom.iterable", "scripthost"],
+        "skipLibCheck": true
     },
-    "include": ["src/**/*.ts", "src/**/*.vue", "tests/**/*.ts"],
+    "include": ["src/**/*.ts", "src/**/*.vue", "test/**/*.ts"],
     "exclude": ["node_modules"]
 }

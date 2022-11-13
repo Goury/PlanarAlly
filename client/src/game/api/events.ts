@@ -1,161 +1,130 @@
-import { AssetList, SyncMode } from "@/core/comm/types";
-import "@/game/api/events/access";
-import "@/game/api/events/location";
-import { setLocationOptions } from "@/game/api/events/location";
-import "@/game/api/events/shape";
-import { socket } from "@/game/api/socket";
-import { BoardInfo, Note, ServerFloor } from "@/game/comm/types/general";
-import { EventBus } from "@/game/event-bus";
-import { GlobalPoint } from "@/game/geom";
-import { layerManager } from "@/game/layers/manager";
-import { addFloor, removeFloor } from "@/game/layers/utils";
-import { gameManager } from "@/game/manager";
-import { gameStore } from "@/game/store";
-import { router } from "@/router";
-import { coreStore } from "../../core/store";
-import { optionsToClient, ServerClient, ServerLocationOptions } from "../comm/types/settings";
-import { gameSettingsStore } from "../settings";
-import { zoomDisplay } from "../utils";
-import { visibilityStore } from "../visibility/store";
+import "../systems/access/events";
+import "../systems/auras/events";
+import "../systems/logic/door/events";
+import "../systems/logic/tp/events";
+import "../systems/trackers/events";
+
+import "./events/dice";
+import "./events/floor";
+import "./events/groups";
+import "./events/initiative";
+import "./events/labels";
+import "./events/location";
+import "./events/logic";
+import "./events/notification";
+import "./events/player";
+import "./events/room";
+import "./events/shape/circularToken";
+import "./events/shape/core";
+import "./events/shape/options";
+import "./events/shape/text";
+import "./events/shape/togglecomposite";
+import "./events/user";
+
+import { toGP } from "../../core/geometry";
+import { SyncMode } from "../../core/models/types";
+import type { AssetList } from "../../core/models/types";
+import { debugLayers } from "../../localStorageHelpers";
+import { router } from "../../router";
+import { clientStore } from "../../store/client";
+import { coreStore } from "../../store/core";
+import { floorStore } from "../../store/floor";
+import { gameStore } from "../../store/game";
+import { locationStore } from "../../store/location";
+import { convertAssetListToMap } from "../assets/utils";
+import { clearGame } from "../clear";
+import { startDrawLoop } from "../draw";
+import { getLocalId, getShapeFromGlobal } from "../id";
+import type { GlobalId } from "../id";
+import type { Note, ServerFloor } from "../models/general";
+import type { Location } from "../models/settings";
+import { setCenterPosition } from "../position";
+import { deleteShapes } from "../shapes/utils";
+
+import { sendClientLocationOptions } from "./emits/client";
+import { activeLayerToselect } from "./events/client";
+import { socket } from "./socket";
+
+// Core WS events
 
 socket.on("connect", () => {
     console.log("Connected");
+    gameStore.setConnected(true);
+    socket.emit("Location.Load");
+    coreStore.setLoading(true);
 });
-socket.on("disconnect", () => {
+socket.on("disconnect", (reason: string) => {
+    gameStore.setConnected(false);
     console.log("Disconnected");
+    if (reason === "io server disconnect") socket.open();
 });
-socket.on("connect_error", (_error: any) => {
+socket.on("connect_error", async (error: any) => {
     console.error("Could not connect to game session.");
-    router.push("/dashboard");
+    if (error.message === "Connection rejected by server") {
+        await router.push({ name: "dashboard", params: { error: "join_game" } });
+    }
 });
-socket.on("error", (_error: any) => {
+socket.on("error", async (_error: any) => {
     console.error("Game session does not exist.");
-    router.push("/dashboard");
+    await router.push({ name: "dashboard", params: { error: "join_game" } });
 });
-socket.on("redirect", (destination: string) => {
+socket.on("redirect", async (destination: string) => {
     console.log("redirecting");
-    router.push(destination);
+    await router.push(destination);
 });
-socket.on(
-    "Room.Info.Set",
-    (data: {
-        name: string;
-        creator: string;
-        invitationCode: string;
-        isLocked: boolean;
-        default_options: ServerLocationOptions;
-        players: { id: number; name: string; location: number; role: number }[];
-    }) => {
-        gameStore.setRoomName(data.name);
-        gameStore.setRoomCreator(data.creator);
-        gameStore.setInvitationCode(data.invitationCode);
-        gameStore.setIsLocked({ isLocked: data.isLocked, sync: false });
-        gameStore.setPlayers(data.players);
-        gameSettingsStore.setDefaultLocationOptions(optionsToClient(data.default_options));
-        setLocationOptions(null, data.default_options);
-    },
-);
-socket.on("Room.Info.InvitationCode.Set", (invitationCode: string) => {
-    gameStore.setInvitationCode(invitationCode);
-    EventBus.$emit("DmSettings.RefreshedInviteCode");
+
+// Bootup events
+
+socket.on("CLEAR", clearGame);
+
+socket.on("Board.Locations.Set", (locationInfo: Location[]) => {
+    locationStore.setLocations(locationInfo, false);
 });
-socket.on("Room.Info.Players.Add", (data: { id: number; name: string; location: number; role: number }) => {
-    gameStore.addPlayer(data);
-});
-socket.on("Username.Set", (username: string) => {
-    gameStore.setUsername(username);
-    gameStore.setDM(username === decodeURIComponent(window.location.pathname.split("/")[2]));
-});
-socket.on("Client.Options.Set", (options: ServerClient) => {
-    gameStore.setGridColour({ colour: options.grid_colour, sync: false });
-    gameStore.setFOWColour({ colour: options.fow_colour, sync: false });
-    gameStore.setRulerColour({ colour: options.ruler_colour, sync: false });
-    gameStore.setInvertAlt({ invertAlt: options.invert_alt, sync: false });
-    gameStore.setPanX(options.pan_x);
-    gameStore.setPanY(options.pan_y);
-    gameStore.setZoomDisplay(zoomDisplay(options.zoom_factor));
-    // gameStore.setZoomDisplay(0.5);
-    if (options.active_layer && options.active_floor) {
-        gameStore.selectFloor({ targetFloor: options.active_floor, sync: false });
-        layerManager.selectLayer(options.active_layer, false);
-    }
-    for (const floor of layerManager.floors) {
-        if (layerManager.getGridLayer(floor.name) !== undefined) layerManager.getGridLayer(floor.name)!.invalidate();
+
+socket.on("Board.Floor.Set", (floor: ServerFloor) => {
+    // It is important that this condition is evaluated before the async addFloor call.
+    // The very first floor that arrives is the one we want to select
+    // When this condition is evaluated after the await, we are at the mercy of the async scheduler
+    const selectFloor = floorStore.state.floors.length === 0;
+    if (debugLayers)
+        console.log(
+            `Adding floor ${floor.name} [${floor.layers.reduce((acc, cur) => acc + cur.shapes.length, 0)} shapes]`,
+        );
+    floorStore.addServerFloor(floor);
+    if (debugLayers) console.log("Done.");
+
+    if (selectFloor) {
+        floorStore.selectFloor({ name: floor.name }, false);
+        startDrawLoop();
+        coreStore.setLoading(false);
+        gameStore.setBoardInitialized(true);
+        if (activeLayerToselect !== undefined) floorStore.selectLayer(activeLayerToselect, false);
+        // Send initial viewport on connect (this can change due to other monitors etc)
+        sendClientLocationOptions();
     }
 });
-socket.on("Position.Set", (data: { floor: string; x: number; y: number; zoom: number }) => {
-    gameStore.selectFloor({ targetFloor: data.floor, sync: false });
-    gameStore.setZoomDisplay(data.zoom);
-    gameManager.setCenterPosition(new GlobalPoint(data.x, data.y));
+
+// Varia
+
+socket.on("Position.Set", (data: { floor?: string; x: number; y: number; zoom?: number }) => {
+    if (data.floor !== undefined) floorStore.selectFloor({ name: data.floor }, true);
+    if (data.zoom !== undefined) clientStore.setZoomDisplay(data.zoom);
+    setCenterPosition(toGP(data.x, data.y));
 });
+
 socket.on("Notes.Set", (notes: Note[]) => {
-    for (const note of notes) gameStore.newNote({ note, sync: false });
+    for (const note of notes) gameStore.newNote(note, false);
 });
-socket.on("Markers.Set", (markers: string[]) => {
-    for (const marker of markers) gameStore.newMarker({ marker, sync: false });
-});
+
 socket.on("Asset.List.Set", (assets: AssetList) => {
-    gameStore.setAssets(assets);
+    gameStore.setAssets(convertAssetListToMap(assets));
 });
-socket.on("Board.Set", (locationInfo: BoardInfo) => {
-    gameStore.clear();
-    visibilityStore.clear();
-    gameStore.setLocations({ locations: locationInfo.locations, sync: false });
-    document.getElementById("layers")!.innerHTML = "";
-    gameStore.resetLayerInfo();
-    layerManager.reset();
-    for (const floor of locationInfo.floors) addFloor(floor);
-    EventBus.$emit("Initiative.Clear");
-    for (const floor of layerManager.floors) {
-        visibilityStore.recalculateVision(floor.name);
-        visibilityStore.recalculateMovement(floor.name);
-    }
-    gameStore.selectFloor({ targetFloor: 0, sync: false });
-    gameStore.setBoardInitialized(true);
+
+socket.on("Markers.Set", (markers: GlobalId[]) => {
+    for (const marker of markers) gameStore.newMarker(getLocalId(marker)!, false);
 });
-socket.on("Floor.Create", (data: { floor: ServerFloor; creator: string }) => {
-    addFloor(data.floor);
-    if (data.creator === coreStore.username) gameStore.selectFloor({ targetFloor: data.floor.name, sync: true });
-});
-socket.on("Floor.Remove", removeFloor);
-socket.on("Temp.Clear", (shapeIds: string[]) => {
-    for (const shapeId of shapeIds) {
-        if (!layerManager.UUIDMap.has(shapeId)) {
-            console.log("Attempted to remove an unknown temporary shape");
-            continue;
-        }
-        const shape = layerManager.UUIDMap.get(shapeId)!;
-        if (!layerManager.hasLayer(shape.floor, shape.layer)) {
-            console.log(`Attempted to remove shape from an unknown layer ${shape.layer}`);
-            continue;
-        }
-        const realShape = layerManager.UUIDMap.get(shape.uuid)!;
-        layerManager.getLayer(shape.floor, shape.layer)!.removeShape(realShape, SyncMode.NO_SYNC);
-    }
-});
-socket.on("Labels.Set", (labels: Label[]) => {
-    for (const label of labels) gameStore.addLabel(label);
-});
-socket.on("Label.Visibility.Set", (data: { user: string; uuid: string; visible: boolean }) => {
-    gameStore.setLabelVisibility(data);
-});
-socket.on("Label.Add", (data: Label) => {
-    gameStore.addLabel(data);
-});
-socket.on("Label.Delete", (data: { user: string; uuid: string }) => {
-    gameStore.deleteLabel(data);
-});
-socket.on("Labels.Filter.Add", (uuid: string) => {
-    gameStore.labelFilters.push(uuid);
-    layerManager.invalidateAllFloors();
-});
-socket.on("Labels.Filter.Remove", (uuid: string) => {
-    const idx = gameStore.labelFilters.indexOf(uuid);
-    if (idx >= 0) {
-        gameStore.labelFilters.splice(idx, 1);
-        layerManager.invalidateAllFloors();
-    }
-});
-socket.on("Labels.Filters.Set", (filters: string[]) => {
-    gameStore.setLabelFilters(filters);
+
+socket.on("Temp.Clear", (shapeIds: GlobalId[]) => {
+    const shapes = shapeIds.map((s) => getShapeFromGlobal(s)!).filter((s) => s !== undefined);
+    deleteShapes(shapes, SyncMode.NO_SYNC);
 });

@@ -1,14 +1,14 @@
 on: pull_request
 name: PR
 jobs:
-    PR_flow:
+    CLIENT:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@master
-            - name: Use Node.js 10.x
-              uses: actions/setup-node@v1
+            - name: Use Node.js 16.x
+              uses: actions/setup-node@v2
               with:
-                  node-version: 10.x
+                  node-version: 16.x
             - name: npm i
               working-directory: client
               run: |
@@ -24,4 +24,9 @@ jobs:
             - name: build
               working-directory: client
               run: |
-                  npm run build
+                  npm run build:ci
+    SERVER:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@master
+            - uses: psf/black@stable

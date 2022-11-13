@@ -1,60 +1,58 @@
-<script lang="ts">
-import Vue from "vue";
-import Component from "vue-class-component";
-import { Prop } from "vue-property-decorator";
+<script setup lang="ts">
+import { ref, watchEffect } from "vue";
+import { useI18n } from "vue-i18n";
 
-import Modal from "@/core/components/modals/modal.vue";
+import Modal from "./Modal.vue";
 
-@Component({
-    components: {
-        Modal,
-    },
-})
-export default class PanelModal extends Vue {
-    @Prop() panelName!: string;
-    @Prop() categories!: string[];
-    @Prop() visible!: boolean;
+const props = withDefaults(
+    defineProps<{ visible: boolean; categories: string[]; applyTranslation?: boolean; initialSelection?: string }>(),
+    { applyTranslation: false },
+);
+const emit = defineEmits<{
+    (e: "update:visible", visible: boolean): void;
+    (e: "update:selection", selection: string): void;
+}>();
 
-    selection = 0;
+const { t } = useI18n();
 
-    handleClick(event: { target: HTMLElement }): void {
-        const child = event.target.firstElementChild;
-        if (child instanceof HTMLInputElement) {
-            child.click();
-        }
+const selection = ref(props.categories[0]);
+
+watchEffect(() => {
+    if (props.initialSelection !== undefined && props.categories.includes(props.initialSelection)) {
+        selection.value = props.initialSelection;
     }
+});
 
-    hideModal(): void {
-        this.$emit("update:visible", false);
-    }
+function setSelection(category: string): void {
+    selection.value = category;
+    emit("update:selection", category);
+}
+
+function hideModal(): void {
+    emit("update:visible", false);
 }
 </script>
 
 <template>
     <Modal :visible="visible" :colour="'rgba(255, 255, 255, 0.8)'" :mask="false">
-        <div
-            class="modal-header"
-            slot="header"
-            slot-scope="m"
-            draggable="true"
-            @dragstart="m.dragStart"
-            @dragend="m.dragEnd"
-        >
-            <div><slot name="title"></slot></div>
-            <div class="header-close" @click="hideModal" :title="$t('common.close')">
-                <i aria-hidden="true" class="far fa-window-close"></i>
+        <template v-slot:header="m">
+            <div class="modal-header" draggable="true" @dragstart="m.dragStart" @dragend="m.dragEnd">
+                <div><slot name="title"></slot></div>
+                <div class="header-close" @click="hideModal" :title="t('common.close')">
+                    <font-awesome-icon :icon="['far', 'window-close']" />
+                </div>
             </div>
-        </div>
-        <div class="modal-body" @click="handleClick">
+        </template>
+        <div class="modal-body">
             <div id="categories">
                 <div
                     class="category"
-                    :class="{ selected: selection === c }"
-                    v-for="(category, c) in categories"
+                    :class="{ selected: selection === category }"
+                    v-for="category in categories"
                     :key="category"
-                    @click="selection = c"
+                    @click="setSelection(category)"
                 >
-                    {{ category }}
+                    {{ applyTranslation ? t(category) : category }}
                 </div>
             </div>
             <slot :selection="selection"></slot>
@@ -62,7 +60,7 @@ export default class PanelModal extends Vue {
     </Modal>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .modal-header {
     background-color: #ff7052;
     padding: 10px;
@@ -108,90 +106,101 @@ export default class PanelModal extends Vue {
     padding-right: 5px;
 }
 
-::v-deep .panel {
-    background-color: white;
-    padding-left: 1em;
-    padding-right: 1em;
-    display: grid;
-    grid-template-columns: [setting] 1fr [value] 1fr [end];
-    /* align-items: center; */
-    align-content: start;
-    min-height: 10em;
-}
+:deep() {
+    .panel {
+        background-color: white;
+        padding: 1em;
+        display: grid;
+        grid-template-columns: [setting] 1fr [value] 1fr [end];
+        /* align-items: center; */
+        align-content: start;
+        min-height: 10em;
 
-::v-deep .row {
-    display: contents;
-}
+        button {
+            padding: 6px 12px;
+            border: 1px solid lightgray;
+            border-radius: 0.25em;
+            background-color: rgb(235, 235, 228);
+        }
 
-::v-deep .row > *,
-::v-deep .panel > *:not(.row) {
-    display: flex;
-    /* justify-content: center; */
-    align-items: center;
-    padding: 0.5em;
-}
+        input[type="number"],
+        input[type="text"] {
+            width: 100%;
+        }
+    }
 
-::v-deep .row:first-of-type > * {
-    margin-top: 0.5em;
-}
+    .row {
+        display: contents;
 
-::v-deep .row:last-of-type > * {
-    margin-bottom: 0.5em;
-}
+        &:first-of-type > * {
+            margin-top: 0.5em;
+        }
 
-::v-deep .row:hover > * {
-    cursor: pointer;
-    text-shadow: 0px 0px 1px black;
-}
+        &:last-of-type > * {
+            margin-bottom: 0.5em;
+        }
 
-::v-deep .smallrow > * {
-    padding: 0.2em;
-}
+        &:hover > * {
+            cursor: pointer;
+            text-shadow: 0px 0px 1px black;
+        }
+    }
 
-::v-deep .header {
-    line-height: 0.1em;
-    margin: 20px 0 15px;
-    font-style: italic;
-    overflow: hidden;
-}
-::v-deep .header:after {
-    position: relative;
-    width: 100%;
-    border-bottom: 1px solid #000;
-    content: "";
-    margin-right: -100%;
-    margin-left: 10px;
-    display: inline-block;
-}
+    .row > *,
+    .panel > *:not(.row) {
+        display: flex;
+        /* justify-content: center; */
+        align-items: center;
+        margin: 0.4em 0;
+    }
 
-::v-deep .danger {
-    color: #ff7052;
-}
-::v-deep .danger:hover {
-    text-shadow: 0px 0px 1px #ff7052;
-    cursor: pointer;
-}
+    .smallrow > * {
+        padding: 0.2em;
+    }
 
-::v-deep .spanrow {
-    grid-column: 1 / end;
-}
+    .header {
+        line-height: 0.1em;
+        margin: 20px 0 15px;
+        font-style: italic;
+        overflow: hidden;
+        padding: 0.5em;
 
-::v-deep input[type="checkbox"] {
-    width: 16px;
-    height: 23px;
-    margin: 0;
-    white-space: nowrap;
-    display: inline-block;
-}
+        &:after {
+            position: relative;
+            width: 100%;
+            border-bottom: 1px solid #000;
+            content: "";
+            margin-right: -100%;
+            margin-left: 10px;
+            display: inline-block;
+        }
+    }
 
-::v-deep input[type="number"],
-::v-deep input[type="text"] {
-    width: 100%;
-}
-::v-deep button {
-    padding: 6px 12px;
-    border: 1px solid lightgray;
-    border-radius: 0.25em;
-    background-color: rgb(235, 235, 228);
+    .danger {
+        color: #ff7052;
+
+        &:hover {
+            text-shadow: 0px 0px 1px #ff7052;
+            cursor: pointer;
+        }
+    }
+
+    .spanrow {
+        grid-column: 1 / end;
+        justify-self: normal;
+        font-weight: bold;
+    }
+
+    input[type="checkbox"] {
+        width: 16px;
+        height: 23px;
+        margin: 0;
+        white-space: nowrap;
+        display: inline-block;
+    }
+
+    .color-picker {
+        margin: 0.5em 0 !important;
+    }
 }
 </style>

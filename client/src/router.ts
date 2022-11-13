@@ -1,99 +1,106 @@
-// import "./class-component-hooks";
+import { createRouter, createWebHistory } from "vue-router";
+import type { RouteRecordRaw } from "vue-router";
 
-import Vue from "vue";
-import Router from "vue-router";
+import Login from "./auth/Login.vue";
+import { Logout } from "./auth/logout";
+import { http } from "./core/http";
+import Dashboard from "./dashboard/Dashboard.vue";
+import Invitation from "./invitation";
+import { handleNotifications } from "./notifications";
+import { coreStore } from "./store/core";
 
-Vue.use(Router);
-import AssetManager from "@/assetManager/manager.vue";
-import Login from "@/auth/login.vue";
-import Logout from "@/auth/logout";
-import Dashboard from "@/dashboard/main.vue";
-import Settings from "@/settings/settings.vue";
-import Game from "@/game/game.vue";
-import Invitation from "@/invitation/invitation";
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+const AssetManager = () => import("./assetManager/AssetManager.vue");
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+const Game = () => import("./game/Game.vue");
 
-import { coreStore } from "@/core/store";
-// import { AssetManager } from "./assetManager/assets";
-// const AssetManager = () => import("./assetManager/assets").then(m => m.AssetManager);
+const routes: Array<RouteRecordRaw> = [
+    {
+        path: "/",
+        redirect: "/dashboard",
+    },
+    {
+        path: "/assets/:folder*",
+        component: AssetManager,
+        name: "assets",
+        meta: {
+            auth: true,
+        },
+    },
+    {
+        path: "/auth/login",
+        component: Login,
+        name: "login", // name used for transition
+    },
+    {
+        path: "/auth/logout",
+        component: Logout,
+    },
+    {
+        path: "/dashboard",
+        name: "dashboard", // name used for transition
+        component: Dashboard,
+        meta: {
+            auth: true,
+        },
+    },
+    {
+        path: "/invite/:code",
+        component: Invitation,
+        meta: {
+            auth: true,
+        },
+    },
+    {
+        path: "/game/:creator/:room",
+        component: Game,
+        name: "game",
+        meta: {
+            auth: true,
+        },
+    },
+];
 
-export const router = new Router({
-    mode: "history",
-    base: process.env.BASE_URL,
-    routes: [
-        {
-            path: "/",
-            redirect: "/dashboard",
-        },
-        {
-            path: "/assets/:folder*",
-            component: AssetManager,
-            name: "assets",
-            meta: {
-                auth: true,
-            },
-        },
-        {
-            path: "/auth",
-            component: { template: "<router-view></router-view>" },
-            children: [
-                { path: "login", component: Login },
-                { path: "logout", component: Logout },
-            ],
-        },
-        {
-            path: "/invite/:code",
-            component: Invitation,
-            meta: {
-                auth: true,
-            },
-        },
-        {
-            path: "/dashboard",
-            component: Dashboard,
-            meta: {
-                auth: true,
-            },
-        },
-        {
-            path: "/settings/:page?",
-            name: "settings",
-            component: Settings,
-            meta: {
-                auth: true,
-            },
-        },
-        {
-            path: "/game/:creator/:room",
-            component: Game,
-            meta: {
-                auth: true,
-            },
-        },
-    ],
+export const router = createRouter({
+    history: createWebHistory(import.meta.env.BASE_URL),
+    routes,
 });
 
 router.beforeEach(async (to, _from, next) => {
-    coreStore.setLoading(true);
-    if (!coreStore.initialized) {
-        const promiseArray = [fetch("/api/auth"), fetch("/api/version"), fetch("/api/changelog")];
-        const [authResponse, versionResponse, changelogResponse] = await Promise.all(promiseArray);
+    // disable for now as it gives a flicker on transition between login and dashboard.
+    // coreStore.setLoading(true);
+    if (!coreStore.state.initialized) {
+        // Launch core requests
+        const promiseArray = [http.get("/api/auth"), http.get("/api/version")];
+
+        // Launch extra requests (changelog & notifications)
+        http.get("/api/changelog").then(async (response) => {
+            const data = await response.json();
+            coreStore.setChangelog(data.changelog);
+        });
+        http.get("/api/notifications").then(async (response) => {
+            const data = await response.json();
+            handleNotifications(data);
+        });
+
+        // Handle core requests
+        const [authResponse, versionResponse] = await Promise.all(promiseArray);
         if (authResponse.ok && versionResponse.ok) {
-            const authData = await authResponse.json();
+            const authData: { auth: boolean; username: string; email: string } = await authResponse.json();
             const versionData = await versionResponse.json();
-            const changelogData = await changelogResponse.json();
             if (authData.auth) {
                 coreStore.setAuthenticated(true);
                 coreStore.setUsername(authData.username);
                 coreStore.setEmail(authData.email);
             }
             coreStore.setVersion(versionData);
-            coreStore.setChangelog(changelogData.changelog);
             coreStore.setInitialized(true);
-            router.push(to.path);
+            await router.push(to.path);
+            next();
         } else {
             console.error("Authentication check could not be fulfilled.");
         }
-    } else if (to.matched.some(record => record.meta.auth) && !coreStore.authenticated) {
+    } else if (to.matched.some((record) => record.meta.auth) && !coreStore.state.authenticated) {
         next({ path: "/auth/login", query: { redirect: to.path } });
     } else {
         next();

@@ -1,16 +1,17 @@
-import io from "socket.io-client";
+import { baseAdjust } from "../core/http";
+import type { Asset } from "../core/models/types";
+import { socketManager } from "../core/socket";
+import { router } from "../router";
 
-import { Asset } from "@/core/comm/types";
-import { assetStore } from "./store";
+import { assetStore } from "./state";
 
-export const socket = io(location.protocol + "//" + location.host + "/pa_assetmgmt", { autoConnect: false });
+export const socket = socketManager.socket("/pa_assetmgmt");
 
 let disConnected = false;
 
-// export const socket = io.connect(location.protocol + "//" + location.host + "/pa_assetmgmt");
 socket.on("connect", () => {
     console.log("Connected");
-    if (disConnected) socket.emit("Folder.Get", assetStore.folderPath);
+    if (disConnected) socket.emit("Folder.Get", assetStore.currentFolder.value);
 });
 socket.on("disconnect", () => {
     console.log("Disconnected");
@@ -23,29 +24,30 @@ socket.on("redirect", (destination: string) => {
 socket.on("Folder.Root.Set", (root: number) => {
     assetStore.setRoot(root);
 });
-socket.on("Folder.Set", (data: { folder: Asset; path?: number[] }) => {
+socket.on("Folder.Set", async (data: { folder: Asset; path?: number[] }) => {
     assetStore.clear();
-    assetStore.idMap.set(data.folder.id, data.folder);
-    if (data.folder.children) {
-        for (const child of data.folder.children) {
-            assetStore.idMap.set(child.id, child);
-            if (child.file_hash) {
-                assetStore.resolveUpload(child.name);
-                assetStore.files.push(child.id);
-            } else {
-                assetStore.folders.push(child.id);
-            }
+    assetStore.setFolderData(data.folder.id, data.folder);
+    if (!assetStore.state.modalActive) {
+        if (data.path) assetStore.setPath(data.path);
+        const path = baseAdjust(`/assets${assetStore.currentFilePath.value}`);
+        if (path !== router.currentRoute.value.path) {
+            await router.push({ path });
         }
     }
-    if (data.path) assetStore.setPath(data.path);
-    window.history.pushState(null, "Asset Manager", `/assets${assetStore.currentFilePath}`);
 });
-socket.on("Folder.Create", (folder: Asset) => {
-    assetStore.folders.push(folder.id);
-    assetStore.idMap.set(folder.id, folder);
+socket.on("Folder.Create", (data: { asset: Asset; parent: number }) => {
+    assetStore.addAsset(data.asset, data.parent);
 });
-socket.on("Asset.Upload.Finish", (asset: Asset) => {
-    assetStore.idMap.set(asset.id, asset);
-    assetStore.files.push(asset.id);
-    assetStore.resolveUpload(asset.name);
+socket.on("Asset.Upload.Finish", (data: { asset: Asset; parent: number }) => {
+    assetStore.addAsset(data.asset, data.parent);
+    assetStore.resolveUpload(data.asset.name);
+});
+
+socket.on("Asset.Export.Finish", (uuid: string) => {
+    window.open(baseAdjust(`/static/temp/${uuid}.paa`));
+});
+
+socket.on("Asset.Import.Finish", (name: string) => {
+    assetStore.resolveUpload(name);
+    socket.emit("Folder.Get", assetStore.currentFolder.value);
 });

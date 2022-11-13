@@ -1,67 +1,59 @@
-<script lang="ts">
-import Vue from "vue";
-import Component from "vue-class-component";
-
-import LocationAdminSettings from "./LocationAdminSettings.vue";
-import GridSettings from "../GridSettings.vue";
-// import PermissionsDmSettings from "./permissions.vue";
-import VisionSettings from "../VisionSettings.vue";
+<script setup lang="ts">
+import { computed, toRef } from "vue";
+import { useI18n } from "vue-i18n";
 
 import PanelModal from "../../../../core/components/modals/PanelModal.vue";
-import { EventBus } from "@/game/event-bus";
-import { gameStore } from "@/game/store";
+import { locationStore } from "../../../../store/location";
+import { uiStore } from "../../../../store/ui";
+import FloorSettings from "../location/FloorSettings.vue";
+import GridSettings from "../location/GridSettings.vue";
+import VariaSettings from "../location/VariaSettings.vue";
+import VisionSettings from "../location/VisionSettings.vue";
 
-@Component({
-    components: {
-        GridSettings,
-        // PermissionsDmSettings,
-        LocationAdminSettings,
-        PanelModal,
-        VisionSettings,
+import AdminSettings from "./AdminSettings.vue";
+import { LocationSettingCategory } from "./categories";
+
+const { t } = useI18n();
+
+const location = toRef(uiStore.state, "openedLocationSettings");
+
+const visible = computed({
+    get() {
+        return location.value >= 0;
     },
-})
-export default class LocationSettings extends Vue {
-    location = gameStore.locations[0].id;
-    visible = false;
+    set(visible: boolean) {
+        if (!visible) uiStore.showLocationSettings(-1);
+    },
+});
 
-    get locationName(): string {
-        return gameStore.locations.find(l => l.id === this.location)!.name;
-    }
+const locationName = computed(
+    () => locationStore.activeLocations.value.find((l) => l.id === location.value)?.name ?? "",
+);
 
-    mounted(): void {
-        EventBus.$on("LocationSettings.Open", (location: number) => {
-            this.visible = true;
-            this.location = location;
-        });
-    }
-
-    beforeDestroy(): void {
-        EventBus.$off("LocationSettings.Open");
-    }
-
-    get categoryNames(): string[] {
-        return [
-            this.$t("common.admin").toString(),
-            this.$t("common.grid").toString(),
-            this.$t("common.vision").toString(),
-        ];
-    }
-}
+const categoryNames = [
+    LocationSettingCategory.Admin,
+    LocationSettingCategory.Grid,
+    LocationSettingCategory.Vision,
+    LocationSettingCategory.Floor,
+    LocationSettingCategory.Varia,
+];
 </script>
 
 <template>
-    <PanelModal :visible.sync="visible" :categories="categoryNames">
+    <PanelModal v-if="location >= 0" v-model:visible="visible" :categories="categoryNames" :applyTranslation="true">
         <template v-slot:title>
-            {{ $t("game.ui.settings.location.LocationSettings.location_settings") }} {{ locationName }}
+            {{ t("game.ui.settings.LocationBar.LocationSettings.location_settings") }} {{ locationName }}
         </template>
         <template v-slot:default="{ selection }">
-            <LocationAdminSettings
-                :location.sync="location"
-                v-show="selection === 0"
+            <AdminSettings
+                :location="location"
+                v-show="selection === LocationSettingCategory.Admin"
                 @close="visible = false"
-            ></LocationAdminSettings>
-            <GridSettings :location="location" v-show="selection === 1"></GridSettings>
-            <VisionSettings :location="location" v-show="selection === 2"></VisionSettings>
+            />
+            <GridSettings :location="location" v-show="selection === LocationSettingCategory.Grid" />
+            <VisionSettings :location="location" v-show="selection === LocationSettingCategory.Vision" />
+            <FloorSettings :location="location" v-show="selection === LocationSettingCategory.Floor" />
+            <VariaSettings :location="location" v-show="selection === LocationSettingCategory.Varia" />
         </template>
     </PanelModal>
 </template>

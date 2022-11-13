@@ -1,18 +1,15 @@
-import Vue from "vue";
-import Component from "vue-class-component";
-import { Route, NavigationGuard } from "vue-router";
+import { defineComponent } from "vue";
 
-import { coreStore } from "@/core/store";
-import { postFetch } from "@/core/utils";
+import { http } from "../core/http";
+import { coreStore } from "../store/core";
 
-Component.registerHooks(["beforeRouteEnter"]);
-
-@Component({})
-export default class Logout extends Vue {
-    async beforeRouteEnter(to: Route, from: Route, next: Parameters<NavigationGuard>[2]): Promise<void> {
-        await postFetch("/api/logout");
+export const Logout = defineComponent({
+    // eslint-disable-next-line vue/multi-word-component-names
+    name: "Logout",
+    async beforeRouteEnter(_to, _from, next) {
+        await http.postJson("/api/logout");
         coreStore.setAuthenticated(false);
         coreStore.setUsername("");
         next({ path: "/auth/login" });
-    }
-}
+    },
+});

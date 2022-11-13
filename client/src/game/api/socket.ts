@@ -1,15 +1,13 @@
-import io from "socket.io-client";
-import { Route } from "vue-router";
+import type { RouteLocationNormalized } from "vue-router";
 
-export const socket = io(location.protocol + "//" + location.host + "/planarally", {
-    autoConnect: false,
-    transports: ["websocket", "polling"],
-});
+import { createNewManager } from "../../core/socket";
 
-export function createConnection(route: Route): void {
-    socket.io.opts.query = `user=${decodeURIComponent(route.params.creator)}&room=${decodeURIComponent(
-        route.params.room,
-    )}`;
-    socket.io.opts.transports = ["websocket", "polling"];
+export const socket = createNewManager().socket("/planarally");
+
+export function createConnection(route: RouteLocationNormalized): void {
+    // since socket.io v3 this is private, couldn't find an immediate 'clean' fix
+    (socket.io as any).opts.query = `user=${decodeURIComponent(
+        route.params.creator as string,
+    )}&room=${decodeURIComponent(route.params.room as string)}`;
     socket.connect();
 }
