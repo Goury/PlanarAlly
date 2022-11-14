@@ -60,6 +60,7 @@ watch(
 
 body {
     overscroll-behavior: contain;
+    overflow: hidden;
 }
 
 html,
