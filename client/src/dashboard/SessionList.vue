@@ -121,11 +121,6 @@ function exportCampaign(): void {
             <img :src="baseAdjust('/static/img/d20-fail.svg')" />
             <div class="padding bold">OOF, That's a critical one!</div>
             <div class="padding">No active campaigns found!</div>
-            <div class="bold">Are you a DM?</div>
-            <div>See all your sessions in the run menu!</div>
-            <div class="padding">OR start a new campaign with create!</div>
-            <div class="bold">A player instead?</div>
-            <div>Wait on an invite link from your DM!</div>
         </div>
 
         <div v-else id="sessions">
