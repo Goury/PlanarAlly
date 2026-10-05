@@ -64,7 +64,12 @@ async def register(request):
     else:
         try:
             with db.atomic():
-                user = User.create_new(username, password, email)
+                user = User.create_new(
+                    username,
+                    password,
+                    email,
+                    can_create_campaigns=cfg().general.new_users_can_create_campaigns,
+                )
                 stats.events.user_created(user.id)
         except:
             return web.HTTPServerError(

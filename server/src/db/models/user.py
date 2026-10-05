@@ -2,7 +2,7 @@ from datetime import date
 from typing import TYPE_CHECKING, cast
 
 import bcrypt
-from peewee import DateField, ForeignKeyField, TextField, fn
+from peewee import BigIntegerField, BooleanField, DateField, ForeignKeyField, TextField, fn
 from playhouse.shortcuts import model_to_dict
 from typing_extensions import Self
 
@@ -30,6 +30,9 @@ class User(BaseDbModel):
     colour_history = cast(str | None, TextField(null=True))
 
     last_login = cast(date, DateField(null=True))
+
+    can_create_campaigns = cast(bool, BooleanField(default=True))
+    asset_quota = cast(int | None, BigIntegerField(null=True))
 
     def __repr__(self):
         return f"<User {self.name}>"
@@ -73,8 +76,10 @@ class User(BaseDbModel):
         return cls.get_or_none(cls.email == email)
 
     @classmethod
-    def create_new(cls, name: str, password: str, email: str | None = None) -> "User":
-        u = User(name=name)
+    def create_new(
+        cls, name: str, password: str, email: str | None = None, *, can_create_campaigns: bool = True
+    ) -> "User":
+        u = User(name=name, can_create_campaigns=can_create_campaigns)
         u.set_password(password)
         if email:
             u.email = email

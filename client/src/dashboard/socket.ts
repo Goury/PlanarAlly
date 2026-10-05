@@ -32,3 +32,7 @@ socket.on("Campaign.Import.Done", (data: { success: true } | { success: false; r
 socket.on("Admin.Enabled", (enabled: boolean) => {
     dashboardState.adminEnabled = enabled;
 });
+
+socket.on("Campaigns.CanCreate", (canCreate: boolean) => {
+    dashboardState.canCreateCampaigns = canCreate;
+});

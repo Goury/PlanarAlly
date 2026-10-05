@@ -10,11 +10,8 @@ from ....db.models.notification import Notification
 from ....db.models.room import Room
 from ....db.models.user import User
 from ....logs import logger
+from ....permissions import get_asset_quota, is_admin
 from ....state.admin import admin_state
-
-
-def is_admin(user: User) -> bool:
-    return user.name == cfg().general.admin_user
 
 
 @sio.on("connect", namespace=ADMIN_NS)
@@ -66,11 +63,48 @@ async def list_users(sid: str):
         return
 
     users = [
-        {"name": u.name, "email": u.email, "lastLogin": u.last_login.isoformat() if u.last_login else None}
+        {
+            "name": u.name,
+            "email": u.email,
+            "lastLogin": u.last_login.isoformat() if u.last_login else None,
+            "canCreateCampaigns": u.can_create_campaigns,
+            "assetQuota": u.asset_quota,
+            "effectiveQuota": get_asset_quota(u),
+            "assetUsage": u.get_total_asset_size(),
+        }
         for u in User.select()
     ]
 
     return users
+
+
+@sio.on("Users.SetCanCreateCampaigns", namespace=ADMIN_NS)
+async def set_can_create_campaigns(sid: str, data: dict):
+    user = admin_state.get_user(sid)
+    if not is_admin(user):
+        return
+
+    target_user = User.by_name(data["name"])
+    if target_user is None:
+        return False
+    target_user.can_create_campaigns = bool(data["value"])
+    target_user.save()
+    return True
+
+
+@sio.on("Users.SetAssetQuota", namespace=ADMIN_NS)
+async def set_asset_quota(sid: str, data: dict):
+    user = admin_state.get_user(sid)
+    if not is_admin(user):
+        return
+
+    target_user = User.by_name(data["name"])
+    if target_user is None:
+        return False
+    quota = data["quota"]
+    target_user.asset_quota = None if quota is None else int(quota)
+    target_user.save()
+    return True
 
 
 @sio.on("Users.Reset", namespace=ADMIN_NS)
@@ -116,7 +150,7 @@ async def add_user(sid: str, name: str):
 
     try:
         pw = secrets.token_urlsafe(20)
-        User.create_new(name, pw)
+        User.create_new(name, pw, can_create_campaigns=cfg().general.new_users_can_create_campaigns)
         return pw
     except:
         logger.exception("Error creating user")

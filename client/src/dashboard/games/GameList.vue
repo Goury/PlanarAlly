@@ -11,6 +11,7 @@ import { useModal } from "../../core/plugins/modals/plugin";
 import { getErrorReason } from "../../core/utils";
 import { coreStore } from "../../store/core";
 import { socket } from "../socket";
+import { dashboardState } from "../state";
 
 import type { RoomInfo } from "./types";
 import { open } from "./utils";
@@ -153,7 +154,9 @@ async function exportCampaign(): Promise<void> {
         <div id="dm">
             <div class="title">
                 <span>DUNGEON MASTER</span>
-                <span @click="router.push({ name: 'create-game' })">NEW GAME +</span>
+                <span v-if="dashboardState.canCreateCampaigns" @click="router.push({ name: 'create-game' })">
+                    NEW GAME +
+                </span>
             </div>
             <div class="filters">
                 <span>Sort:</span>

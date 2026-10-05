@@ -2,6 +2,7 @@ from ....api.socket.constants import DASHBOARD_NS
 from ....app import sio
 from ....auth import get_authorized_user
 from ....config import cfg
+from ....permissions import can_create_campaigns
 from ....state.dashboard import dashboard_state
 from . import campaign  # noqa: F401
 
@@ -16,6 +17,7 @@ async def dashboard_connect(sid: str, environ):
             await sio.emit("Export.Enabled", True, to=sid, namespace=DASHBOARD_NS)
         if config.general.admin_user == user.name:
             await sio.emit("Admin.Enabled", True, to=sid, namespace=DASHBOARD_NS)
+        await sio.emit("Campaigns.CanCreate", can_create_campaigns(user), to=sid, namespace=DASHBOARD_NS)
 
 
 @sio.on("disconnect", namespace=DASHBOARD_NS)

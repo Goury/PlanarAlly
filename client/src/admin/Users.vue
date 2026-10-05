@@ -7,6 +7,56 @@ interface User {
     name: string;
     email: string;
     lastLogin: string;
+    canCreateCampaigns: boolean;
+    assetQuota: number | null;
+    effectiveQuota: number;
+    assetUsage: number;
+}
+
+const MB = 1024 * 1024;
+
+function formatMb(bytes: number): string {
+    return `${(bytes / MB).toFixed(1)} MB`;
+}
+
+function formatQuota(user: User): string {
+    const quota = user.effectiveQuota > 0 ? formatMb(user.effectiveQuota) : "∞";
+    const suffix = user.assetQuota === null ? " (default)" : "";
+    return `${formatMb(user.assetUsage)} / ${quota}${suffix}`;
+}
+
+async function setCanCreateCampaigns(user: User, value: boolean): Promise<void> {
+    const success = (await socket.emitWithAck("Users.SetCanCreateCampaigns", { name: user.name, value })) as boolean;
+    if (success) {
+        user.canCreateCampaigns = value;
+    } else {
+        window.alert("Failed to update DM permission");
+    }
+}
+
+async function editQuota(user: User): Promise<void> {
+    const current = user.assetQuota === null ? "" : (user.assetQuota / MB).toString();
+    const input = window.prompt(
+        `Asset quota for ${user.name} in MB.\nLeave empty to use the server default, 0 for unlimited.`,
+        current,
+    );
+    if (input === null) return;
+    let quota: number | null = null;
+    if (input.trim() !== "") {
+        const mb = Number(input);
+        if (!Number.isFinite(mb) || mb < 0) {
+            window.alert("Invalid quota");
+            return;
+        }
+        quota = Math.round(mb * MB);
+    }
+    const success = (await socket.emitWithAck("Users.SetAssetQuota", { name: user.name, quota })) as boolean;
+    if (success) {
+        const data = (await socket.emitWithAck("Users.List")) as User[];
+        users.value = data.sort((a, b) => a.name.localeCompare(b.name));
+    } else {
+        window.alert("Failed to update asset quota");
+    }
 }
 
 const users = ref<User[]>([]);
@@ -79,6 +129,8 @@ async function addUser(): Promise<void> {
                 <div class="username">Name</div>
                 <div>Email</div>
                 <div>Last login</div>
+                <div>DM</div>
+                <div>Assets</div>
                 <div>Reset password</div>
                 <div>Remove user</div>
 
@@ -96,6 +148,14 @@ async function addUser(): Promise<void> {
                     <div class="username">{{ user.name }}</div>
                     <div>{{ user.email }}</div>
                     <div>{{ user.lastLogin }}</div>
+                    <div>
+                        <input
+                            type="checkbox"
+                            :checked="user.canCreateCampaigns"
+                            @change="setCanCreateCampaigns(user, ($event.target as HTMLInputElement).checked)"
+                        />
+                    </div>
+                    <div class="pointer" @click="editQuota(user)">{{ formatQuota(user) }}</div>
                     <div class="pointer" @click="reset(user.name)">reset</div>
                     <div class="pointer" @click="remove(user.name)">remove</div>
                 </template>
@@ -120,7 +180,7 @@ async function addUser(): Promise<void> {
 #users-header,
 #users-list {
     display: grid;
-    grid-template-columns: 1fr 1fr 150px 150px 150px;
+    grid-template-columns: 1fr 1fr 150px 60px 220px 150px 150px;
     flex-direction: column;
 
     > div {
@@ -141,7 +201,7 @@ async function addUser(): Promise<void> {
     }
 
     .fullWidth {
-        grid-column: 1 / 6;
+        grid-column: 1 / 8;
     }
 }
 

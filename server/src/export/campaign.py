@@ -58,6 +58,7 @@ from ..db.models.user import User
 from ..db.models.user_options import UserOptions
 from ..db.typed import SelectSequence
 from ..logs import logger
+from ..permissions import get_asset_quota
 from ..save import SAVE_VERSION, upgrade_save
 from ..state.dashboard import dashboard_state
 from ..storage import get_storage
@@ -366,6 +367,7 @@ class CampaignImporter:
         send_status(self.loop, "import", self.sid, "> Unpack data")
         with tarfile.open(fileobj=pac, mode="r") as tar:
             assets = []
+            import_asset_size = 0
             for member in tar.getmembers():
                 # security checks
                 if member.islnk() or member.issym():
@@ -389,6 +391,8 @@ class CampaignImporter:
                     if member.name != str(Path("assets") / full_hash_name):
                         continue
 
+                    import_asset_size += member.size
+
                     if get_storage().exists_sync(filehash):
                         continue
 
@@ -405,6 +409,10 @@ class CampaignImporter:
                     upgrade_save(self.db, is_import=True)
 
                     self.migrator = CampaignMigrator("import", self.db, ACTIVE_DB, None, self.sid, loop=self.loop)
+
+            quota = get_asset_quota(self.root_user)
+            if quota > 0 and self.root_user.get_total_asset_size() + import_asset_size > quota:
+                raise Exception("Importing this campaign would exceed your asset quota")
 
             if len(assets) > 0:
                 send_status(self.loop, "import", self.sid, f"> Importing {len(assets)} asset(s)")

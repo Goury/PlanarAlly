@@ -15,7 +15,7 @@ When writing migrations make sure that these things are respected:
 - It's often a good idea to start the server with a clean save and use `.schema <table_name>` in sqlite to get the exact schema output that a clean save creates
 """
 
-SAVE_VERSION = 119
+SAVE_VERSION = 120
 
 import asyncio
 import json
@@ -899,6 +899,10 @@ def upgrade(
         # Add Asset.kind_specific_data
         with db.atomic():
             db.execute_sql('ALTER TABLE "asset" ADD COLUMN "kind_specific_data" BLOB DEFAULT NULL')
+    elif version == 119:
+        with db.atomic():
+            db.execute_sql('ALTER TABLE "user" ADD COLUMN "can_create_campaigns" INTEGER NOT NULL DEFAULT 1')
+            db.execute_sql('ALTER TABLE "user" ADD COLUMN "asset_quota" INTEGER DEFAULT NULL')
     else:
         raise UnknownVersionException(f"No upgrade code for save format {version} was found.")
     inc_save_version(db)

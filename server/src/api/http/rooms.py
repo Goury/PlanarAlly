@@ -4,7 +4,6 @@ from datetime import datetime
 from typing import cast
 
 from aiohttp import web
-from aiohttp_security import check_authorized
 from typing_extensions import TypedDict
 
 from ...app import sio
@@ -14,8 +13,11 @@ from ...db.models.player_room import PlayerRoom
 from ...db.models.room import Room
 from ...db.models.user import User
 from ...export.campaign import export_campaign, import_campaign
+from ...permissions import can_create_campaigns
 from ..common.rooms.create import create_room
 from ..socket.constants import DASHBOARD_NS
+
+CANNOT_CREATE_REASON = "You don't have permission to create campaigns"
 
 
 async def get_list(request: web.Request):
@@ -75,6 +77,8 @@ async def set_info(request: web.Request):
 
 async def create(request: web.Request):
     user = await get_authorized_user(request)
+    if not can_create_campaigns(user):
+        return web.HTTPForbidden(reason=CANNOT_CREATE_REASON)
     data = await request.json()
     roomname = data["name"]
     logo = data["logo"]
@@ -210,7 +214,9 @@ async def import_info(request: web.Request):
     if not cfg().general.enable_export:
         return web.HTTPForbidden(reason="Import is disabled by the server.")
 
-    await check_authorized(request)
+    user = await get_authorized_user(request)
+    if not can_create_campaigns(user):
+        return web.HTTPForbidden(reason=CANNOT_CREATE_REASON)
 
     name = request.match_info["name"]
 
@@ -250,6 +256,8 @@ async def import_chunk(request: web.Request):
         return web.HTTPForbidden()
 
     user = await get_authorized_user(request)
+    if not can_create_campaigns(user):
+        return web.HTTPForbidden(reason=CANNOT_CREATE_REASON)
 
     name = request.match_info["name"]
     try:

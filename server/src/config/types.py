@@ -120,6 +120,11 @@ class GeneralConfig(ConfigModel):
     # Accounts can be created manually using the CLI by the admin
     allow_signups: bool = True
 
+    # Whether newly created accounts are allowed to create/import campaigns
+    # This can be changed per user in the admin panel
+    # The admin user can always create campaigns
+    new_users_can_create_campaigns: bool = True
+
     # Enable exporting of campaigns
     # If disabled, users will not be able to export campaigns
     enable_export: bool = True

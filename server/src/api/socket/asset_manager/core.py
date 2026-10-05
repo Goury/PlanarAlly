@@ -11,6 +11,7 @@ from ....db.models.asset import Asset
 from ....db.models.asset_entry import AssetEntry
 from ....db.models.user import User
 from ....logs import logger
+from ....permissions import get_asset_quota
 from ....state.asset import asset_state
 from ....transform.to_api.asset import transform_asset_entry
 from ....storage import get_storage
@@ -23,6 +24,7 @@ from ...models.asset import (
     ApiAssetRename,
     ApiAssetUpload,
 )
+from ...helpers import send_log_toast
 from ..constants import ASSET_NS
 from .ddraft import get_ddraft_data
 
@@ -311,7 +313,7 @@ async def assetmgmt_upload_limit(sid: str):
     return {
         "single": config.assets.max_single_asset_size_in_bytes,
         "used": user.get_total_asset_size(),
-        "total": config.assets.max_total_asset_size_in_bytes,
+        "total": get_asset_quota(user),
     }
 
 
@@ -348,17 +350,19 @@ async def assetmgmt_upload(sid: str, raw_data: Any):
 
     total_asset_size = user.get_total_asset_size()
     max_single_asset_size = config.assets.max_single_asset_size_in_bytes
-    max_total_asset_size = config.assets.max_total_asset_size_in_bytes
+    max_total_asset_size = get_asset_quota(user)
 
     if max_single_asset_size > 0 and len(data) > max_single_asset_size:
         logger.warning(
             f"{user.name} attempted to upload a file that is too large ({len(data)} > {max_single_asset_size})"
         )
+        await send_log_toast(f"{upload_data.name} is too large to upload", "warn", room=sid, namespace=ASSET_NS)
         return
     if max_total_asset_size > 0 and total_asset_size + len(data) > max_total_asset_size:
         logger.warning(
             f"{user.name} attempted to upload a file that is too large ({total_asset_size + len(data)} > {max_total_asset_size})"
         )
+        await send_log_toast(f"{upload_data.name} exceeds your asset quota", "warn", room=sid, namespace=ASSET_NS)
         return
 
     if upload_data.name.endswith(".dd2vtt") or upload_data.name.endswith(".uvtt"):
